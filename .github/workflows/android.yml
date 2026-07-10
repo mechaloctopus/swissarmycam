@@ -1,0 +1,109 @@
+name: Build Android APK
+
+# Builds an installable, debug-signed release APK for Swiss Army Camera and
+# publishes it to a GitHub Release so there is always a stable download link.
+#
+# Trigger: pushes that touch the app, or run it manually from the Actions tab.
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "app/**"
+      - ".github/workflows/android.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: android-build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Assemble release APK
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    env:
+      EXPO_NO_TELEMETRY: "1"
+      CI: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Accept Android SDK licenses
+        run: yes | sdkmanager --licenses >/dev/null 2>&1 || true
+
+      - name: Install JS dependencies
+        run: npm ci
+
+      - name: Read app version
+        id: ver
+        run: echo "version=$(node -p "require('./app.json').expo.version")" >> "$GITHUB_OUTPUT"
+
+      - name: Prebuild native Android project
+        run: npx expo prebuild --platform android --no-install
+
+      - name: Gradle — assembleRelease
+        working-directory: app/android
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: Stage APK
+        run: |
+          mkdir -p ../dist
+          cp android/app/build/outputs/apk/release/app-release.apk ../dist/swiss-army-camera.apk
+          cp android/app/build/outputs/apk/release/app-release.apk "../dist/swiss-army-camera-v${{ steps.ver.outputs.version }}-${{ github.run_number }}.apk"
+          ls -lh ../dist
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: swiss-army-camera-apk
+          path: dist/*.apk
+          if-no-files-found: error
+
+      - name: Publish to GitHub Release (android-latest)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: android-latest
+          name: "Swiss Army Camera — Android (latest)"
+          prerelease: true
+          fail_on_unmatched_files: true
+          body: |
+            **Swiss Army Camera** — Android build (Phase 2 shell).
+
+            - App version: `v${{ steps.ver.outputs.version }}`
+            - Build: `#${{ github.run_number }}` · commit `${{ github.sha }}`
+            - Debug-signed for **sideloading** (not a Play Store upload).
+
+            ### Install on your Pixel 9 Pro
+            1. Download **`swiss-army-camera.apk`** below (open this page on the phone).
+            2. Tap the file → allow "install unknown apps" for your browser/files app if asked.
+            3. Open **Swiss Army Camera** and grant camera access.
+
+            Works today: Capture (photo, flip, flash, zoom, grid/level/reticle, self-timer),
+            Timelapse (interval frames), Lab (live preview overlays), Library (local-first).
+            Studio / Screen / Attachments are honest, staged placeholders.
+          files: |
+            app/dist/swiss-army-camera.apk
+            app/dist/swiss-army-camera-v${{ steps.ver.outputs.version }}-${{ github.run_number }}.apk

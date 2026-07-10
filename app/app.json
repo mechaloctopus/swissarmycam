@@ -1,0 +1,57 @@
+{
+  "expo": {
+    "name": "Swiss Army Camera",
+    "slug": "swiss-army-camera",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "swissarmycamera",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0B0B0C",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0B0B0C"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.swissarmycamera.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Swiss Army Camera uses the camera to capture photos and timelapses.",
+        "NSMicrophoneUsageDescription": "Swiss Army Camera uses the microphone for video and commentary recording.",
+        "NSPhotoLibraryAddUsageDescription": "Swiss Army Camera saves your captures to your photo library when you choose to."
+      }
+    },
+    "android": {
+      "package": "com.swissarmycamera.app",
+      "versionCode": 1,
+      "userInterfaceStyle": "dark",
+      "adaptiveIcon": {
+        "backgroundColor": "#0B0B0C",
+        "foregroundImage": "./assets/adaptive-icon.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Swiss Army Camera uses the camera to capture photos and timelapses.",
+          "microphonePermission": "Swiss Army Camera uses the microphone for video and commentary recording."
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Swiss Army Camera saves your captures to your photo library.",
+          "savePhotosPermission": "Swiss Army Camera saves your captures to your photo library.",
+          "isAccessMediaLocationEnabled": false
+        }
+      ]
+    ]
+  }
+}

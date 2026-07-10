@@ -3,8 +3,18 @@
 > **The camera app with every tool in the handle.**
 > A precision mobile camera, creator studio, screen recorder, compositor, and visual-intelligence platform.
 
-This repository contains the **one-page marketing + product-specification website** for the
-Swiss Army Camera concept. It doubles as three documents in one:
+This repository contains **both** the marketing website **and** the Android app:
+
+- **`/` (root)** — the one-page marketing + product-specification website (below).
+- **[`/app`](./app)** — the **Android app** (Expo + React Native), the Phase 2 shell with a
+  working camera, timelapse, lab preview, and local-first library. GitHub Actions builds an
+  installable APK on every push and publishes it to
+  [**Releases → `android-latest`**](https://github.com/mechaloctopus/swissarmycam/releases/tag/android-latest).
+  See [`app/README.md`](./app/README.md). An iOS build (AVFoundation) is planned as a near-clone.
+
+---
+
+The website itself doubles as three documents in one:
 
 1. A premium public **landing page**.
 2. A **technical product manifesto** (honest about what phone hardware can and cannot do).

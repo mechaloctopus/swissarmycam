@@ -1,0 +1,81 @@
+# Swiss Army Camera — Android app (Phase 2 shell)
+
+The mobile app for [Swiss Army Camera](../). Built with **Expo + React Native**, this is the
+**Phase 2 app shell** from the roadmap on the marketing site: a working camera instrument with
+Capture, Timelapse, a Lab preview, and a local-first Library — plus honest, staged placeholders
+for the modules that need native code (Studio, Screen, Attachments).
+
+Designed for **Android first** (targeting a Pixel 9 Pro), the code is structured so a
+near-identical **iOS** build slots in later with iOS-specific camera work (AVFoundation).
+
+## Get the APK (no build required)
+
+Every push to the app publishes an installable APK to the repo's
+[**Releases → `android-latest`**](https://github.com/mechaloctopus/swissarmycam/releases/tag/android-latest).
+Download `swiss-army-camera.apk` on your phone and open it (allow "install unknown apps" if asked).
+
+## What works today
+
+| Tab | Status | Notes |
+| --- | --- | --- |
+| **Capture** | ✅ Works | Photo capture, front/rear flip, flash (off/auto/on), zoom presets, rule-of-thirds grid, electronic level (accelerometer), center reticle, self-timer (3s/10s). Saves in-app + best-effort to Photos. |
+| **Timelapse** | ✅ Works | Intervalometer (1–30 s), live frame counter, frames saved as a set. Frame→MP4 stitching is Phase 3 (native). |
+| **Lab** | ✅ Works | Live viewfinder with real overlay guides + look tints. On-sensor GPU pixel analysis is Phase 6 (clearly marked). |
+| **Library** | ✅ Works | Local-first grid, fullscreen viewer, delete, save-to-Photos. Lists timelapse sets. |
+| **Settings** | ✅ Works | Honest capability map, privacy commitments, version, links. |
+| **Studio / Screen / Attachments** | 🔧 Staged | Honest "requires native module" screens matching the site's roadmap. |
+
+Everything is **local-first / private by default**. "Save to Photos" is an explicit action.
+
+## Run it in development
+
+```bash
+cd app
+npm install
+npx expo start        # then press 'a' for Android, or scan the QR in Expo Go / a dev client
+```
+
+Camera features need a real device or emulator with a camera (the web target has no sensor).
+
+## Build the APK locally (optional)
+
+```bash
+cd app
+npm install
+npx expo prebuild --platform android --no-install
+cd android && ./gradlew assembleRelease
+# → android/app/build/outputs/apk/release/app-release.apk  (debug-signed, sideloadable)
+```
+
+Requires JDK 17 and the Android SDK. CI does exactly this — see
+[`.github/workflows/android.yml`](../.github/workflows/android.yml).
+
+## Tech
+
+- **Expo SDK 57 · React Native 0.86 · TypeScript**
+- `expo-camera` (viewfinder + capture), `expo-sensors` (level), `expo-media-library`
+  (save to Photos), `expo-file-system` (local-first storage), `react-native-svg` (brand mark),
+  `expo-haptics`, `expo-image`, `react-native-safe-area-context`.
+- Custom design system in `src/theme.ts` mirroring the website tokens (Swiss black / steel / red).
+
+## Structure
+
+```
+app/
+├── App.tsx                 # Root: permission gate + tool-drawer tab bar
+├── app.json                # Expo config (Android package, permissions, icons)
+├── assets/                 # App icon + adaptive icon + splash (generated from the brand mark)
+└── src/
+    ├── theme.ts            # Design tokens
+    ├── store.ts            # Local-first capture/timelapse storage
+    ├── media.ts            # Explicit "save to Photos"
+    ├── components/         # Mark (logo), ui primitives, viewfinder Overlays
+    └── screens/            # Capture, Timelapse, Lab, Library, Settings, ComingSoon
+```
+
+## Notes on honesty (same as the site)
+
+Software cannot make a phone sensor see IR/UV/thermal wavelengths it physically rejects — those
+need attachments. Manual ISO/shutter/RAW, green-screen compositing, and screen recording need
+native modules and are staged, not faked. Screen recording (Phase 5) will be user-consented with
+a visible indicator. See the in-app **Settings → Capability map**.

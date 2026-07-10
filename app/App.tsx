@@ -1,0 +1,143 @@
+import React, { useState } from "react";
+import { View, Text, StyleSheet, Pressable, ScrollView } from "react-native";
+import { StatusBar } from "expo-status-bar";
+import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
+import { useCameraPermissions } from "expo-camera";
+import { C, F } from "./src/theme";
+import { Mark } from "./src/components/Mark";
+import { Mono } from "./src/components/ui";
+import CaptureScreen from "./src/screens/CaptureScreen";
+import TimelapseScreen from "./src/screens/TimelapseScreen";
+import LabScreen from "./src/screens/LabScreen";
+import LibraryScreen from "./src/screens/LibraryScreen";
+import SettingsScreen from "./src/screens/SettingsScreen";
+import ComingSoonScreen, { ComingSoon } from "./src/screens/ComingSoonScreen";
+
+type Kind = "camera" | "plain";
+type Tab = { key: string; name: string; glyph: string; kind: Kind };
+
+const TABS: Tab[] = [
+  { key: "capture", name: "Capture", glyph: "◎", kind: "camera" },
+  { key: "studio", name: "Studio", glyph: "▤", kind: "plain" },
+  { key: "screen", name: "Screen", glyph: "▣", kind: "plain" },
+  { key: "timelapse", name: "Timelapse", glyph: "⧗", kind: "camera" },
+  { key: "lab", name: "Lab", glyph: "⌬", kind: "camera" },
+  { key: "attach", name: "Attachments", glyph: "⊕", kind: "plain" },
+  { key: "library", name: "Library", glyph: "▦", kind: "plain" },
+  { key: "settings", name: "Settings", glyph: "⚙", kind: "plain" },
+];
+
+const SOON: Record<string, ComingSoon> = {
+  studio: {
+    glyph: "▤", title: "Studio", phase: "Compositor · Phase 4",
+    levelLabel: "Requires native code", tone: C.native,
+    blurb: "A layer-based compositor: timeline, keyframes, green-screen chroma key and overlays — a desktop-class studio, phone-sized.",
+    planned: ["Timeline & layers", "Green-screen chroma key", "AI background removal", "Keyframed objects & motion paths", "Lower thirds & text layers", "Platform export presets"],
+  },
+  screen: {
+    glyph: "▣", title: "Screen", phase: "Screen studio · Phase 5",
+    levelLabel: "Requires native code", tone: C.native,
+    blurb: "Screen + facecam recording with a facecam bubble, mic mixing and game/tutorial modes — using Android MediaProjection, with a visible recording indicator. User-consented only.",
+    planned: ["Screen recording (MediaProjection)", "Facecam bubble (PiP)", "Mic + commentary mixing", "Game mode", "Tutorial / walkthrough mode", "Recording presets"],
+  },
+  attach: {
+    glyph: "⊕", title: "Attachments", phase: "Hardware ecosystem · Phase 7",
+    levelLabel: "Requires attachment", tone: C.attach,
+    blurb: "Detect, calibrate and manage external optics and modules — the bridge from software to glass and sensors that a phone physically lacks.",
+    planned: ["USB-C thermal camera modules", "External IR illuminator & night-vision", "UV inspection attachment", "Macro / polarizer / ND clip-ons", "Bluetooth shutter & remote", "Developer API for attachments"],
+  },
+};
+
+function Shell() {
+  const insets = useSafeAreaInsets();
+  const [active, setActive] = useState("capture");
+  const [permission, requestPermission] = useCameraPermissions();
+  const tab = TABS.find((t) => t.key === active)!;
+
+  const renderScreen = () => {
+    if (tab.kind === "camera") {
+      if (!permission) return <Splash label="Checking permissions…" />;
+      if (!permission.granted) return <PermissionGate onGrant={requestPermission} canAsk={permission.canAskAgain} />;
+    }
+    switch (active) {
+      case "capture": return <CaptureScreen />;
+      case "timelapse": return <TimelapseScreen />;
+      case "lab": return <LabScreen />;
+      case "library": return <LibraryScreen />;
+      case "settings": return <SettingsScreen />;
+      default: return <ComingSoonScreen data={SOON[active]} />;
+    }
+  };
+
+  return (
+    <View style={styles.root}>
+      <StatusBar style="light" />
+      <View style={{ flex: 1, paddingTop: insets.top }} key={active}>
+        {renderScreen()}
+      </View>
+
+      <View style={[styles.tabbarWrap, { paddingBottom: Math.max(insets.bottom, 8) }]}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabbar}>
+          {TABS.map((t) => {
+            const on = t.key === active;
+            return (
+              <Pressable key={t.key} onPress={() => setActive(t.key)} style={[styles.tab, on && styles.tabOn]}>
+                <Text style={[styles.tabGlyph, { color: on ? "#fff" : C.inkMute }]}>{t.glyph}</Text>
+                <Text style={[styles.tabName, { color: on ? "#fff" : C.inkMute }]}>{t.name}</Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      </View>
+    </View>
+  );
+}
+
+function Splash({ label }: { label: string }) {
+  return (
+    <View style={styles.center}>
+      <Mark size={64} />
+      <Mono color={C.inkMute} size={12} style={{ marginTop: 18 }}>{label}</Mono>
+    </View>
+  );
+}
+
+function PermissionGate({ onGrant, canAsk }: { onGrant: () => void; canAsk: boolean }) {
+  return (
+    <View style={styles.center}>
+      <Mark size={72} />
+      <Text style={styles.gateTitle}>Camera access</Text>
+      <Text style={styles.gateText}>
+        Swiss Army Camera is a camera instrument — it needs the camera to show a viewfinder and
+        capture. Nothing leaves your device unless you choose to share it.
+      </Text>
+      <Pressable onPress={onGrant} style={styles.gateBtn}>
+        <Text style={styles.gateBtnText}>{canAsk ? "Grant camera access  →" : "Open Settings to allow"}</Text>
+      </Pressable>
+      <Mono color={C.inkFaint} size={11} style={{ marginTop: 16 }}>Library & Settings work without it.</Mono>
+    </View>
+  );
+}
+
+export default function App() {
+  return (
+    <SafeAreaProvider>
+      <Shell />
+    </SafeAreaProvider>
+  );
+}
+
+const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: C.bg },
+  center: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32, backgroundColor: C.bg },
+  gateTitle: { color: C.ink, fontFamily: F.sansMed, fontSize: 26, fontWeight: "700", letterSpacing: -0.5, marginTop: 24 },
+  gateText: { color: C.inkSoft, fontSize: 14.5, lineHeight: 22, textAlign: "center", marginTop: 12, maxWidth: 340 },
+  gateBtn: { marginTop: 26, backgroundColor: C.red, paddingHorizontal: 24, paddingVertical: 15, borderRadius: 8 },
+  gateBtnText: { color: "#fff", fontFamily: F.sansMed, fontWeight: "700", fontSize: 15 },
+  tabbarWrap: { backgroundColor: C.bg2, borderTopWidth: 1, borderTopColor: C.line },
+  tabbar: { flexDirection: "row", gap: 8, paddingHorizontal: 12, paddingTop: 10 },
+  tab: { alignItems: "center", justifyContent: "center", paddingHorizontal: 14, paddingVertical: 9, borderRadius: 40, borderWidth: 1, borderColor: "transparent", minWidth: 62 },
+  tabOn: { backgroundColor: C.red },
+  tabGlyph: { fontSize: 18, marginBottom: 3 },
+  tabName: { fontFamily: F.mono, fontSize: 10, letterSpacing: 0.3 },
+});
