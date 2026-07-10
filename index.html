@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Swiss Army Camera — a precision mobile camera, creator studio, screen recorder, compositor and visual-intelligence platform. The camera app with every tool in the handle." />
+  <meta name="theme-color" content="#0B0B0C" />
+  <title>Swiss Army Camera — The camera app with every tool in the handle.</title>
+  <link rel="preconnect" href="/" />
+  <link rel="stylesheet" href="assets/css/styles.css" />
+  <!-- Inline SVG favicon: a Swiss cross inside a lens ring. Replace with a real icon when brand is final. -->
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230B0B0C'/%3E%3Ccircle cx='16' cy='16' r='9' fill='none' stroke='%23E0231C' stroke-width='2'/%3E%3Crect x='14.5' y='10' width='3' height='12' fill='%23E0231C'/%3E%3Crect x='10' y='14.5' width='12' height='3' fill='%23E0231C'/%3E%3C/svg%3E" />
+</head>
+<body>
+  <!-- Skip link for keyboard users -->
+  <a class="skip-link" href="#thesis">Skip to content</a>
+
+  <!-- ============================ NAV ============================ -->
+  <header class="nav" id="nav">
+    <div class="nav__inner">
+      <a class="brand" href="#top" aria-label="Swiss Army Camera — home">
+        <!-- LOGO PLACEHOLDER: swap this .brand__mark <svg> for a supplied logo <img>. -->
+        <span class="brand__mark" aria-hidden="true">
+          <svg viewBox="0 0 40 40" width="26" height="26">
+            <circle cx="20" cy="20" r="12" fill="none" stroke="currentColor" stroke-width="1.5"/>
+            <circle cx="20" cy="20" r="5.5" fill="none" stroke="currentColor" stroke-width="1"/>
+            <rect x="18.6" y="7" width="2.8" height="26" class="brand__cross"/>
+            <rect x="7" y="18.6" width="26" height="2.8" class="brand__cross"/>
+          </svg>
+        </span>
+        <span class="brand__word">Swiss&nbsp;Army&nbsp;Camera<span class="brand__reg" title="Working project name">™?</span></span>
+      </a>
+
+      <nav class="nav__links" aria-label="Primary">
+        <a href="#thesis">Thesis</a>
+        <a href="#matrix">Features</a>
+        <a href="#truths">Limits</a>
+        <a href="#stack">Stack</a>
+        <a href="#market">Market</a>
+        <a href="#roadmap">Roadmap</a>
+      </nav>
+
+      <div class="nav__actions">
+        <button class="iconbtn" id="themeToggle" type="button" aria-label="Toggle light / dark theme" aria-pressed="false">
+          <span class="iconbtn__dot" aria-hidden="true"></span>
+          <span class="iconbtn__label" data-theme-label>Light</span>
+        </button>
+        <button class="btn btn--ghost" data-open-modal>Investor overview</button>
+      </div>
+
+      <button class="nav__burger" id="burger" type="button" aria-label="Open menu" aria-expanded="false">
+        <span></span><span></span>
+      </button>
+    </div>
+    <div class="nav__progress" id="progress" aria-hidden="true"></div>
+  </header>
+
+  <main id="top">
+
+    <!-- ============================ §01 HERO ============================ -->
+    <section class="hero" id="hero">
+      <canvas class="hero__canvas" id="lensCanvas" aria-hidden="true"></canvas>
+      <div class="hero__grid" aria-hidden="true"></div>
+
+      <div class="wrap hero__inner">
+        <div class="hero__copy">
+          <p class="eyebrow"><span class="eyebrow__dot"></span>§01 · Precision instrument · Est. concept 2026</p>
+          <h1 class="hero__title">
+            The camera app with<br /><span class="accentline">every tool in the handle.</span>
+          </h1>
+          <p class="hero__sub">
+            A precision mobile camera, creator studio, screen recorder, compositor,
+            and visual-intelligence platform — a single instrument for everything
+            a phone sensor can be asked to do.
+          </p>
+
+          <div class="hero__cta">
+            <a class="btn btn--solid" href="#thesis">Explore the vision <span class="btn__arrow">→</span></a>
+            <button class="btn btn--ghost" data-open-modal>View investor overview</button>
+            <a class="btn btn--line" href="#matrix">See feature stack</a>
+          </div>
+
+          <dl class="hero__specs">
+            <div><dt>Platforms</dt><dd>iOS · Android</dd></div>
+            <div><dt>Modes</dt><dd>8 instruments</dd></div>
+            <div><dt>Pro tier</dt><dd>$4.99 / mo</dd></div>
+            <div><dt>Storage</dt><dd>Local-first</dd></div>
+          </dl>
+        </div>
+
+        <!-- Device mockup — animated lens interface. LOGO IMAGE can drop into .device__badge -->
+        <div class="hero__device" aria-hidden="true">
+          <div class="device">
+            <div class="device__notch"></div>
+            <div class="device__screen">
+              <div class="vf">
+                <div class="vf__top">
+                  <span class="vf__rec"><i></i>REC</span>
+                  <span class="vf__mode" id="vfMode">CAPTURE</span>
+                  <span class="vf__batt">4K·60</span>
+                </div>
+                <div class="vf__reticle">
+                  <span class="vf__cross vf__cross--v"></span>
+                  <span class="vf__cross vf__cross--h"></span>
+                  <span class="vf__corner tl"></span><span class="vf__corner tr"></span>
+                  <span class="vf__corner bl"></span><span class="vf__corner br"></span>
+                  <span class="vf__f">f/1.8</span>
+                </div>
+                <div class="vf__readout">
+                  <span data-vf="iso">ISO 100</span>
+                  <span data-vf="shutter">1/125</span>
+                  <span data-vf="wb">5600K</span>
+                  <span data-vf="ev">±0.0</span>
+                </div>
+                <div class="vf__drawer" role="img" aria-label="Tool drawer">
+                  <span class="vf__tool is-active">◎</span>
+                  <span class="vf__tool">▤</span>
+                  <span class="vf__tool">▣</span>
+                  <span class="vf__tool">⧗</span>
+                  <span class="vf__tool">⌬</span>
+                  <span class="vf__tool">⊕</span>
+                </div>
+              </div>
+            </div>
+            <!-- LOGO PLACEHOLDER: drop a supplied product/logo image here. -->
+            <div class="device__badge">SAC · 01</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="hero__marquee" aria-hidden="true">
+        <div class="marquee__track">
+          <span>PRO CAMERA</span><i>✚</i><span>CREATOR STUDIO</span><i>✚</i><span>SCREEN RECORDER</span><i>✚</i><span>COMPOSITOR</span><i>✚</i><span>TIMELAPSE</span><i>✚</i><span>VISUAL INTELLIGENCE</span><i>✚</i><span>ATTACHMENT PLATFORM</span><i>✚</i>
+          <span>PRO CAMERA</span><i>✚</i><span>CREATOR STUDIO</span><i>✚</i><span>SCREEN RECORDER</span><i>✚</i><span>COMPOSITOR</span><i>✚</i><span>TIMELAPSE</span><i>✚</i><span>VISUAL INTELLIGENCE</span><i>✚</i><span>ATTACHMENT PLATFORM</span><i>✚</i>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================ §02 THESIS ============================ -->
+    <section class="section thesis" id="thesis">
+      <div class="wrap">
+        <p class="eyebrow"><span class="eyebrow__dot"></span>§02 · The thesis</p>
+        <div class="thesis__grid">
+          <h2 class="section__title reveal">
+            Light is data. Most camera apps<br />throw the data away.
+          </h2>
+          <div class="thesis__body reveal">
+            <p>
+              A modern phone captures an enormous amount of information from
+              visible light — far more than a single JPEG preserves. A camera app
+              should not only take photos. It should <em>expose, interpret, enhance,
+              layer, record, measure, analyze,</em> and <em>transform</em> visual data.
+            </p>
+            <p>
+              The hardware is already a precision instrument. What is missing is not
+              a better lens — it is the software layer that treats the phone as what
+              it actually is: a mobile visual computer.
+            </p>
+          </div>
+        </div>
+
+        <div class="axioms">
+          <div class="axiom reveal"><span class="axiom__n">A1</span><h3>Light is data.</h3><p>Every frame is a dense array of measurements, not a keepsake.</p></div>
+          <div class="axiom reveal"><span class="axiom__n">A2</span><h3>The camera is a sensor.</h3><p>Treat it like an instrument and it will report, not just remember.</p></div>
+          <div class="axiom reveal"><span class="axiom__n">A3</span><h3>The phone is a visual computer.</h3><p>Capture, compute and composite happen in one place, in your hand.</p></div>
+          <div class="axiom reveal"><span class="axiom__n">A4</span><h3>The missing piece is a camera OS.</h3><p>One unified operating system for everything a sensor can do.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================ §03 WHAT IT IS ============================ -->
+    <section class="section whatis" id="whatis">
+      <div class="wrap">
+        <p class="eyebrow"><span class="eyebrow__dot"></span>§03 · What Swiss Army Camera is</p>
+        <h2 class="section__title reveal">Nine instruments. One handle.</h2>
+        <div class="whatis__grid" id="whatisGrid"><!-- rendered by main.js --></div>
+      </div>
+    </section>
+
+    <!-- ============================ §04 FEATURE MATRIX ============================ -->
+    <section class="section matrix" id="matrix">
+      <div class="wrap">
+        <div class="section__head">
+          <div>
+            <p class="eyebrow"><span class="eyebrow__dot"></span>§04 · Capability matrix</p>
+            <h2 class="section__title reveal">The full tool stack, opened up.</h2>
+          </div>
+          <div class="matrix__controls">
+            <button class="chip is-active" data-matrix-filter="all" type="button">All groups</button>
+            <button class="chip" data-matrix-toggle="expand" type="button">Expand all</button>
+          </div>
+        </div>
+        <div class="matrix__list" id="matrixList"><!-- rendered by main.js --></div>
+      </div>
+    </section>
+
+    <!-- ============================ §05 HARD TRUTHS ============================ -->
+    <section class="section truths" id="truths">
+      <div class="wrap">
+        <p class="eyebrow"><span class="eyebrow__dot"></span>§05 · Hard technical truths</p>
+        <h2 class="section__title reveal">We tell you what physics allows.</h2>
+        <p class="section__lede reveal">
+          Software cannot make a sensor see wavelengths it physically cannot detect.
+          Here is an honest capability map — colour-coded from <em>ships today</em> to
+          <em>impossible without hardware</em>.
+        </p>
+
+        <div class="legend" id="truthLegend"><!-- rendered by main.js --></div>
+        <div class="truths__grid" id="truthsGrid"><!-- rendered by main.js --></div>
+      </div>
+    </section>
+
+    <!-- ============================ §06 STACK ============================ -->
+    <section class="section stack" id="stack">
+      <div class="wrap">
+        <p class="eyebrow"><span class="eyebrow__dot"></span>§06 · Architecture & technical stack</p>
+        <h2 class="section__title reveal">Built like an instrument, not a wrapper.</h2>
+        <div class="stack__cols">
+          <div class="stack__col reveal">
+            <h3 class="stack__h"><span>Website</span><span class="stack__tag">this page</span></h3>
+            <dl class="speclist" id="stackWeb"></dl>
+          </div>
+          <div class="stack__col reveal">
+            <h3 class="stack__h"><span>Mobile app</span><span class="stack__tag">native</span></h3>
+            <dl class="speclist" id="stackApp"></dl>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================ §07 APP UX ============================ -->
+    <section class="section ux" id="ux">
+      <div class="wrap">
+        <p class="eyebrow"><span class="eyebrow__dot"></span>§07 · App UX vision</p>
+        <h2 class="section__title reveal">Eight tabs. Every one an instrument.</h2>
+        <div class="ux__layout">
+          <div class="ux__tabs" id="uxTabs" role="tablist" aria-label="App tabs"></div>
+          <div class="ux__panel" id="uxPanel" role="tabpanel" aria-live="polite"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================ §08 PRICING ============================ -->
+    <section class="section pricing" id="pricing">
+      <div class="wrap">
+        <p class="eyebrow"><span class="eyebrow__dot"></span>§08 · Subscription model</p>
+        <h2 class="section__title reveal">Priced for mass adoption. Built for recurring revenue.</h2>
+        <div class="pricing__grid" id="pricingGrid"></div>
+        <p class="pricing__foot">Plus future hardware-attachment sales. Prices shown are concept placeholders subject to final review.</p>
+      </div>
+    </section>
+
+    <!-- ============================ §09 MARKET ============================ -->
+    <section class="section market" id="market">
+      <div class="wrap">
+        <p class="eyebrow"><span class="eyebrow__dot"></span>§09 · Market overview</p>
+        <h2 class="section__title reveal">A fragmented market waiting for one instrument.</h2>
+
+        <div class="market__points reveal">
+          <ul class="ticks">
+            <li>Smartphone cameras are now the primary camera for most people.</li>
+            <li>The creator economy drives demand for fast mobile capture, edit and share tools.</li>
+            <li>CapCut, Lightroom, VSCO, Filmic-style apps, OBS, screen recorders and AI editors all prove demand — but the market is fragmented across single-purpose apps.</li>
+            <li>The opportunity is an integrated <em>camera operating system</em> for creators, builders, educators, gamers, streamers, contractors, travelers and experimental users.</li>
+            <li>Mobile photo / video / editing are established multi-billion-dollar categories; AI and creator tools are the fastest-growing.</li>
+            <li>At $4.99 / month, pricing is low enough for mass adoption yet high enough to build meaningful recurring revenue.</li>
+          </ul>
+        </div>
+
+        <div class="calc reveal">
+          <div class="calc__head">
+            <div>
+              <p class="eyebrow eyebrow--sm"><span class="eyebrow__dot"></span>Revenue model</p>
+              <h3 class="calc__title">Gross revenue @ <span class="mono">$4.99</span> / mo</h3>
+            </div>
+            <p class="calc__note">Gross, before app-store fees, taxes, refunds, infrastructure and marketing.</p>
+          </div>
+
+          <div class="calc__interactive">
+            <label class="calc__label" for="subSlider">Subscribers</label>
+            <input type="range" id="subSlider" min="0" max="1000000" step="1000" value="100000" />
+            <div class="calc__figures">
+              <div><span class="calc__k">Subscribers</span><strong id="calcSubs" class="mono">100,000</strong></div>
+              <div><span class="calc__k">Monthly gross</span><strong id="calcMonthly" class="mono accent">$499,000</strong></div>
+              <div><span class="calc__k">Annual gross</span><strong id="calcAnnual" class="mono accent">$5,988,000</strong></div>
+            </div>
+          </div>
+
+          <div class="calc__tablewrap">
+            <table class="rtable" id="revTable">
+              <thead>
+                <tr><th>Subscribers</th><th>Monthly gross</th><th>Annual gross</th></tr>
+              </thead>
+              <tbody><!-- rendered by main.js --></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================ §10 INVESTOR ============================ -->
+    <section class="section investor" id="investor">
+      <div class="wrap">
+        <p class="eyebrow"><span class="eyebrow__dot"></span>§10 · Investor overview</p>
+        <h2 class="section__title reveal">A staged build, engineered in phases.</h2>
+        <p class="section__lede reveal">Each phase ships something usable and de-risks the next. <button class="linklike" data-open-modal>Open the full investor overview →</button></p>
+
+        <ol class="roadmap" id="roadmap"><!-- rendered by main.js --></ol>
+
+        <div class="funds reveal">
+          <h3 class="funds__h">Possible use of funds</h3>
+          <div class="funds__grid" id="fundsGrid"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================ §11 POSITIONING ============================ -->
+    <section class="section positioning" id="positioning">
+      <div class="wrap">
+        <p class="eyebrow"><span class="eyebrow__dot"></span>§11 · Competitive positioning</p>
+        <h2 class="section__title reveal">Where it sits, and why.</h2>
+        <div class="pos__grid" id="posGrid"></div>
+      </div>
+    </section>
+
+    <!-- ============================ §12 FUTURE ============================ -->
+    <section class="section future" id="future">
+      <div class="wrap">
+        <p class="eyebrow"><span class="eyebrow__dot"></span>§12 · Future features</p>
+        <h2 class="section__title reveal">The roadmap keeps opening tools.</h2>
+        <div class="future__cloud" id="futureCloud"></div>
+      </div>
+    </section>
+
+    <!-- ============================ FOUNDER / STORY ============================ -->
+    <section class="section story" id="story">
+      <div class="wrap">
+        <p class="eyebrow"><span class="eyebrow__dot"></span>Lineage · The founder story</p>
+        <div class="story__grid">
+          <h2 class="section__title reveal">An engineering tradition,<br />pointed at light.</h2>
+          <div class="story__body reveal">
+            <p>
+              Swiss precision was never about a single object. It was a way of
+              working — carried from <strong>swordmaking</strong> into the escapements of
+              <strong>watches</strong>, from watches into <strong>carriages</strong> and then
+              <strong>automobiles</strong>, and from mechanical linkages into optical
+              instruments. Each generation inherited the same discipline: tight
+              tolerances, honest materials, tools that outlive their makers.
+            </p>
+            <p>
+              Swiss Army Camera brings that lineage into computational photography.
+              We treat the phone the way a watchmaker treats a movement — every
+              control deliberate, every edge finished, nothing decorative that
+              isn't also functional. The multi-tool is the right metaphor: many
+              instruments, one handle, built to be trusted in the field.
+            </p>
+            <p class="story__sig">— Founder's note</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================ §13 LEGAL / ETHICS ============================ -->
+    <section class="section privacy" id="privacy">
+      <div class="wrap">
+        <p class="eyebrow"><span class="eyebrow__dot"></span>§13 · Legal · Ethics · Privacy</p>
+        <h2 class="section__title reveal">An instrument you can trust.</h2>
+        <div class="privacy__grid" id="privacyGrid"></div>
+      </div>
+    </section>
+
+    <!-- ============================ CTA / WAITLIST ============================ -->
+    <section class="section cta" id="waitlist">
+      <div class="wrap cta__wrap">
+        <div class="cta__mark" aria-hidden="true">
+          <svg viewBox="0 0 120 120" width="88" height="88">
+            <circle cx="60" cy="60" r="46" fill="none" stroke="currentColor" stroke-width="2"/>
+            <circle cx="60" cy="60" r="22" fill="none" stroke="currentColor" stroke-width="1.5"/>
+            <rect x="56" y="16" width="8" height="88" class="brand__cross"/>
+            <rect x="16" y="56" width="88" height="8" class="brand__cross"/>
+          </svg>
+        </div>
+        <h2 class="cta__title">Join the waitlist.</h2>
+        <p class="cta__sub">Be first to hold the instrument. No spam — a build log and an early invite.</p>
+        <!-- WAITLIST PLACEHOLDER: wire to your provider (Supabase, Mailchimp, ConvertKit…). -->
+        <form class="waitform" id="waitform" novalidate>
+          <input type="email" id="waitEmail" placeholder="you@studio.com" aria-label="Email address" required />
+          <button class="btn btn--solid" type="submit">Request access <span class="btn__arrow">→</span></button>
+        </form>
+        <p class="waitform__msg" id="waitMsg" role="status" aria-live="polite"></p>
+      </div>
+    </section>
+  </main>
+
+  <!-- ============================ FOOTER ============================ -->
+  <footer class="footer" id="footer">
+    <div class="wrap footer__inner">
+      <div class="footer__brand">
+        <!-- LOGO PLACEHOLDER: replace this mark with a supplied footer logo image. -->
+        <div class="footer__logo" aria-hidden="true">
+          <svg viewBox="0 0 40 40" width="30" height="30">
+            <circle cx="20" cy="20" r="12" fill="none" stroke="currentColor" stroke-width="1.5"/>
+            <rect x="18.6" y="7" width="2.8" height="26" class="brand__cross"/>
+            <rect x="7" y="18.6" width="26" height="2.8" class="brand__cross"/>
+          </svg>
+          <span>Swiss Army Camera</span>
+        </div>
+        <p class="footer__tag">Precision tools for mobile vision.</p>
+      </div>
+
+      <div class="footer__cols">
+        <div class="footer__col">
+          <h4>Product</h4>
+          <a href="#matrix">Feature stack</a>
+          <a href="#truths">What's possible</a>
+          <a href="#ux">App UX</a>
+          <a href="#pricing">Pricing</a>
+        </div>
+        <div class="footer__col">
+          <h4>Company</h4>
+          <a href="#story">Story</a>
+          <a href="#roadmap">Roadmap</a>
+          <a href="#privacy">Privacy & ethics</a>
+          <button class="linklike" data-open-modal>Investor overview</button>
+        </div>
+        <div class="footer__col">
+          <h4>Contact</h4>
+          <!-- CONTACT PLACEHOLDER -->
+          <a href="#waitlist">Join waitlist</a>
+          <a href="mailto:investors@example.com">investors@ (placeholder)</a>
+          <a href="mailto:hello@example.com">hello@ (placeholder)</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="wrap footer__base">
+      <p class="footer__legal">
+        © <span id="year">2026</span> Swiss Army Camera (working project name).
+        <span class="footer__tm">Name, branding, and trademark strategy subject to final review.</span>
+        “Swiss Army Camera” is a working title and is not affiliated with, endorsed by,
+        or connected to Victorinox or any national armed forces.
+      </p>
+      <button class="totop" id="toTop" type="button" aria-label="Back to top">↑ Top</button>
+    </div>
+  </footer>
+
+  <!-- ============================ INVESTOR MODAL ============================ -->
+  <div class="modal" id="investorModal" role="dialog" aria-modal="true" aria-labelledby="modalTitle" hidden>
+    <div class="modal__backdrop" data-close-modal></div>
+    <div class="modal__panel" role="document">
+      <button class="modal__close" data-close-modal aria-label="Close">✕</button>
+      <p class="eyebrow"><span class="eyebrow__dot"></span>Investor overview · Confidential concept</p>
+      <h2 id="modalTitle" class="modal__title">Swiss Army Camera</h2>
+      <p class="modal__lede">A camera operating system for mobile. Staged build, honest engineering, recurring revenue at consumer-friendly pricing, with a hardware ecosystem as the long-term moat.</p>
+
+      <div class="modal__stats">
+        <div><span>Pro price</span><strong class="mono">$4.99/mo</strong></div>
+        <div><span>Trial</span><strong class="mono">3 days</strong></div>
+        <div><span>Phases</span><strong class="mono">8</strong></div>
+        <div><span>Platforms</span><strong class="mono">iOS · Android</strong></div>
+      </div>
+
+      <div class="modal__cols">
+        <div>
+          <h4>The staged build</h4>
+          <ol class="modal__list" id="modalRoadmap"></ol>
+        </div>
+        <div>
+          <h4>Illustrative gross revenue @ $4.99/mo</h4>
+          <table class="rtable rtable--sm" id="modalTable"><tbody></tbody></table>
+          <p class="modal__fine">Gross, pre-fees. Illustrative only — not a projection or an offer of securities.</p>
+          <h4 class="modal__h2">Use of funds</h4>
+          <div class="modal__funds" id="modalFunds"></div>
+        </div>
+      </div>
+
+      <div class="modal__cta">
+        <a class="btn btn--solid" href="#waitlist" data-close-modal>Join the waitlist <span class="btn__arrow">→</span></a>
+        <a class="btn btn--line" href="mailto:investors@example.com">Contact investor relations</a>
+      </div>
+    </div>
+  </div>
+
+  <script src="assets/js/data.js"></script>
+  <script src="assets/js/main.js"></script>
+</body>
+</html>
