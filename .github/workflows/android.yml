@@ -47,6 +47,7 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
+          cache: gradle
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
@@ -105,5 +106,5 @@ jobs:
             Timelapse (interval frames), Lab (live preview overlays), Library (local-first).
             Studio / Screen / Attachments are honest, staged placeholders.
           files: |
-            app/dist/swiss-army-camera.apk
-            app/dist/swiss-army-camera-v${{ steps.ver.outputs.version }}-${{ github.run_number }}.apk
+            dist/swiss-army-camera.apk
+            dist/swiss-army-camera-v${{ steps.ver.outputs.version }}-${{ github.run_number }}.apk
