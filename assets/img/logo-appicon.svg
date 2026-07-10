@@ -1,0 +1,18 @@
+<!-- Swiss Army Camera — app icon. Dark handle tile (Swiss-Army-knife red edge) + mark.
+     Self-contained fixed colours so it renders correctly as a store/app icon. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="512" height="512" role="img" aria-label="Swiss Army Camera app icon">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#17181B"/>
+      <stop offset="1" stop-color="#0B0B0C"/>
+    </linearGradient>
+  </defs>
+  <rect x="1.5" y="1.5" width="97" height="97" rx="22" fill="url(#tile)" stroke="#E0231C" stroke-width="2"/>
+  <g transform="translate(50 50) scale(0.62) translate(-50 -50)">
+    <g fill="none" stroke="#F2F3F5" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="50" cy="50" r="45" stroke-width="2.6"/>
+      <path stroke-width="2" opacity="0.85" d="M50 19 L76.85 34.5 M50 19 L75.16 12.69 M76.85 34.5 L76.85 65.5 M76.85 34.5 L94.89 53.14 M76.85 65.5 L50 81 M76.85 65.5 L69.73 90.45 M50 81 L23.15 65.5 M50 81 L24.84 87.31 M23.15 65.5 L23.15 34.5 M23.15 65.5 L5.11 46.86 M23.15 34.5 L50 19 M23.15 34.5 L30.27 9.55"/>
+    </g>
+    <path fill="#E0231C" d="M46 37 h8 v9 h9 v8 h-9 v9 h-8 v-9 h-9 v-8 h9 z"/>
+  </g>
+</svg>

@@ -8,8 +8,10 @@
   <title>Swiss Army Camera — The camera app with every tool in the handle.</title>
   <link rel="preconnect" href="/" />
   <link rel="stylesheet" href="assets/css/styles.css" />
-  <!-- Inline SVG favicon: a Swiss cross inside a lens ring. Replace with a real icon when brand is final. -->
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230B0B0C'/%3E%3Ccircle cx='16' cy='16' r='9' fill='none' stroke='%23E0231C' stroke-width='2'/%3E%3Crect x='14.5' y='10' width='3' height='12' fill='%23E0231C'/%3E%3Crect x='10' y='14.5' width='12' height='3' fill='%23E0231C'/%3E%3C/svg%3E" />
+  <!-- Favicon: brand mark (aperture ring + Swiss cross) on a dark handle tile.
+       Full-resolution source: assets/img/logo-appicon.svg -->
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230B0B0C' stroke='%23E0231C' stroke-width='1.5'/%3E%3Cg fill='none' stroke='%23F2F3F5' stroke-width='1.6' stroke-linejoin='round'%3E%3Ccircle cx='16' cy='16' r='10'/%3E%3Cpath d='M16 8 L23 12 M23 12 L23 20 M23 20 L16 24 M16 24 L9 20 M9 20 L9 12 M9 12 L16 8'/%3E%3C/g%3E%3Cpath fill='%23E0231C' d='M14.6 12.4 h2.8 v2.2 h2.2 v2.8 h-2.2 v2.2 h-2.8 v-2.2 h-2.2 v-2.8 h2.2 z'/%3E%3C/svg%3E" />
+  <link rel="apple-touch-icon" href="assets/img/logo-appicon.svg" />
 </head>
 <body>
   <!-- Skip link for keyboard users -->
@@ -19,13 +21,16 @@
   <header class="nav" id="nav">
     <div class="nav__inner">
       <a class="brand" href="#top" aria-label="Swiss Army Camera — home">
-        <!-- LOGO PLACEHOLDER: swap this .brand__mark <svg> for a supplied logo <img>. -->
+        <!-- Swiss Army Camera mark (aperture iris + Swiss cross). Clean, tick-less
+             variant for small sizes. Full asset: assets/img/logo-mark.svg — or swap
+             this whole <span> for <img src="assets/img/logo-mark.svg" …>. -->
         <span class="brand__mark" aria-hidden="true">
-          <svg viewBox="0 0 40 40" width="26" height="26">
-            <circle cx="20" cy="20" r="12" fill="none" stroke="currentColor" stroke-width="1.5"/>
-            <circle cx="20" cy="20" r="5.5" fill="none" stroke="currentColor" stroke-width="1"/>
-            <rect x="18.6" y="7" width="2.8" height="26" class="brand__cross"/>
-            <rect x="7" y="18.6" width="26" height="2.8" class="brand__cross"/>
+          <svg viewBox="0 0 100 100" width="28" height="28">
+            <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="50" cy="50" r="45" stroke-width="3.4"/>
+              <path stroke-width="2.6" opacity="0.85" d="M50 19 L76.85 34.5 M50 19 L75.16 12.69 M76.85 34.5 L76.85 65.5 M76.85 34.5 L94.89 53.14 M76.85 65.5 L50 81 M76.85 65.5 L69.73 90.45 M50 81 L23.15 65.5 M50 81 L24.84 87.31 M23.15 65.5 L23.15 34.5 M23.15 65.5 L5.11 46.86 M23.15 34.5 L50 19 M23.15 34.5 L30.27 9.55"/>
+            </g>
+            <path class="brand__cross" d="M46 37 h8 v9 h9 v8 h-9 v9 h-8 v-9 h-9 v-8 h9 z"/>
           </svg>
         </span>
         <span class="brand__word">Swiss&nbsp;Army&nbsp;Camera<span class="brand__reg" title="Working project name">™?</span></span>
@@ -373,11 +378,13 @@
     <section class="section cta" id="waitlist">
       <div class="wrap cta__wrap">
         <div class="cta__mark" aria-hidden="true">
-          <svg viewBox="0 0 120 120" width="88" height="88">
-            <circle cx="60" cy="60" r="46" fill="none" stroke="currentColor" stroke-width="2"/>
-            <circle cx="60" cy="60" r="22" fill="none" stroke="currentColor" stroke-width="1.5"/>
-            <rect x="56" y="16" width="8" height="88" class="brand__cross"/>
-            <rect x="16" y="56" width="88" height="8" class="brand__cross"/>
+          <svg viewBox="0 0 100 100" width="92" height="92">
+            <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+              <path stroke-width="1.3" opacity="0.4" d="M50 6 L50 10 M54.6 6.24 L54.39 8.23 M59.15 6.96 L58.73 8.92 M63.6 8.15 L62.98 10.06 M67.9 9.8 L67.08 11.63 M72 11.89 L70 15.36 M75.86 14.4 L74.69 16.02 M79.44 17.3 L78.1 18.79 M82.7 20.56 L81.21 21.9 M85.6 24.14 L83.98 25.31 M88.11 28 L84.64 30 M90.2 32.1 L88.37 32.92 M91.85 36.4 L89.94 37.02 M93.04 40.85 L91.08 41.27 M93.76 45.4 L91.77 45.61 M94 50 L90 50 M93.76 54.6 L91.77 54.39 M93.04 59.15 L91.08 58.73 M91.85 63.6 L89.94 62.98 M90.2 67.9 L88.37 67.08 M88.11 72 L84.64 70 M85.6 75.86 L83.98 74.69 M82.7 79.44 L81.21 78.1 M79.44 82.7 L78.1 81.21 M75.86 85.6 L74.69 83.98 M72 88.11 L70 84.64 M67.9 90.2 L67.08 88.37 M63.6 91.85 L62.98 89.94 M59.15 93.04 L58.73 91.08 M54.6 93.76 L54.39 91.77 M50 94 L50 90 M45.4 93.76 L45.61 91.77 M40.85 93.04 L41.27 91.08 M36.4 91.85 L37.02 89.94 M32.1 90.2 L32.92 88.37 M28 88.11 L30 84.64 M24.14 85.6 L25.31 83.98 M20.56 82.7 L21.9 81.21 M17.3 79.44 L18.79 78.1 M14.4 75.86 L16.02 74.69 M11.89 72 L15.36 70 M9.8 67.9 L11.63 67.08 M8.15 63.6 L10.06 62.98 M6.96 59.15 L8.92 58.73 M6.24 54.6 L8.23 54.39 M6 50 L10 50 M6.24 45.4 L8.23 45.61 M6.96 40.85 L8.92 41.27 M8.15 36.4 L10.06 37.02 M9.8 32.1 L11.63 32.92 M11.89 28 L15.36 30 M14.4 24.14 L16.02 25.31 M17.3 20.56 L18.79 21.9 M20.56 17.3 L21.9 18.79 M24.14 14.4 L25.31 16.02 M28 11.89 L30 15.36 M32.1 9.8 L32.92 11.63 M36.4 8.15 L37.02 10.06 M40.85 6.96 L41.27 8.92 M45.4 6.24 L45.61 8.23"/>
+              <circle cx="50" cy="50" r="45" stroke-width="2.2"/>
+              <path stroke-width="1.8" opacity="0.85" d="M50 19 L76.85 34.5 M50 19 L75.16 12.69 M76.85 34.5 L76.85 65.5 M76.85 34.5 L94.89 53.14 M76.85 65.5 L50 81 M76.85 65.5 L69.73 90.45 M50 81 L23.15 65.5 M50 81 L24.84 87.31 M23.15 65.5 L23.15 34.5 M23.15 65.5 L5.11 46.86 M23.15 34.5 L50 19 M23.15 34.5 L30.27 9.55"/>
+            </g>
+            <path class="brand__cross" d="M46 37 h8 v9 h9 v8 h-9 v9 h-8 v-9 h-9 v-8 h9 z"/>
           </svg>
         </div>
         <h2 class="cta__title">Join the waitlist.</h2>
@@ -396,12 +403,14 @@
   <footer class="footer" id="footer">
     <div class="wrap footer__inner">
       <div class="footer__brand">
-        <!-- LOGO PLACEHOLDER: replace this mark with a supplied footer logo image. -->
+        <!-- Footer mark. Full asset: assets/img/logo-mark.svg -->
         <div class="footer__logo" aria-hidden="true">
-          <svg viewBox="0 0 40 40" width="30" height="30">
-            <circle cx="20" cy="20" r="12" fill="none" stroke="currentColor" stroke-width="1.5"/>
-            <rect x="18.6" y="7" width="2.8" height="26" class="brand__cross"/>
-            <rect x="7" y="18.6" width="26" height="2.8" class="brand__cross"/>
+          <svg viewBox="0 0 100 100" width="32" height="32">
+            <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="50" cy="50" r="45" stroke-width="3.4"/>
+              <path stroke-width="2.6" opacity="0.85" d="M50 19 L76.85 34.5 M50 19 L75.16 12.69 M76.85 34.5 L76.85 65.5 M76.85 34.5 L94.89 53.14 M76.85 65.5 L50 81 M76.85 65.5 L69.73 90.45 M50 81 L23.15 65.5 M50 81 L24.84 87.31 M23.15 65.5 L23.15 34.5 M23.15 65.5 L5.11 46.86 M23.15 34.5 L50 19 M23.15 34.5 L30.27 9.55"/>
+            </g>
+            <path class="brand__cross" d="M46 37 h8 v9 h9 v8 h-9 v9 h-8 v-9 h-9 v-8 h9 z"/>
           </svg>
           <span>Swiss Army Camera</span>
         </div>

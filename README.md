@@ -90,23 +90,28 @@ privacy commitments are all data structures rendered by `main.js`. Change the wo
 the page updates. Longer prose sections (hero, thesis, founder story, legal footer) live
 directly in `index.html`.
 
-### Replacing logos / brand images
-Placeholders are marked throughout the code with `LOGO PLACEHOLDER` comments. Search for them:
+### The logo
+A **designed logo ships with the site** — an *aperture-iris + Swiss-cross* mark ringed by a
+precision instrument bezel (camera + Swiss cross + Swiss-watch tooling, in one instrument). Files:
+
+- `assets/img/logo-mark.svg` — mark only (ring uses `currentColor`, cross is Swiss red).
+- `assets/img/logo.svg` — horizontal lockup with the wordmark.
+- `assets/img/logo-appicon.svg` — rounded app-icon tile (the red edge nods to the knife handle).
+
+The mark is **inlined** into `index.html` at the nav, footer, and CTA so the ring follows the
+light/dark theme automatically. The favicon is a simplified version of the same mark.
+
+To use **your own** logo instead, the swap points are marked in the code. Find them with:
 
 ```bash
-grep -rn "LOGO PLACEHOLDER\|PLACEHOLDER" index.html assets/
+grep -rn "brand__mark\|footer__logo\|cta__mark\|logo-" index.html
 ```
 
-Key spots:
-- **Nav mark** — `index.html`, `.brand__mark` inline SVG (lens + Swiss cross). Swap for `<img src="assets/img/logo.svg" …>`.
-- **Hero device badge** — `.device__badge`, a place to drop a product/logo image.
+- **Nav mark** — `.brand__mark` inline SVG → swap for `<img src="assets/img/logo.svg" …>`.
 - **Footer mark** — `.footer__logo` inline SVG.
-- **CTA mark** — `.cta__mark` inline SVG.
-- Drop image files into `assets/img/` (see `assets/img/README.md`).
-
-> The **proposed logo concept** is a Swiss-Army-knife handle + camera lens + Swiss cross.
-> The inline SVGs on the page approximate the *lens + cross* half so the layout reads correctly
-> before final art exists.
+- **CTA mark** — `.cta__mark` inline SVG (detailed bezel variant).
+- **Hero device badge** — `.device__badge`, a slot for a product/logo image.
+- Drop new files into `assets/img/` (see `assets/img/README.md`).
 
 ### Wiring the waitlist form
 `index.html` `#waitform` currently validates the email client-side and shows a success message.
