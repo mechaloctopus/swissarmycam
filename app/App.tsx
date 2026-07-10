@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, Pressable, ScrollView } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useCameraPermissions } from "expo-camera";
+import { SettingsProvider } from "./src/settings";
 import { C, F } from "./src/theme";
 import { Mark } from "./src/components/Mark";
 import { Mono } from "./src/components/ui";
@@ -122,7 +123,9 @@ function PermissionGate({ onGrant, canAsk }: { onGrant: () => void; canAsk: bool
 export default function App() {
   return (
     <SafeAreaProvider>
-      <Shell />
+      <SettingsProvider>
+        <Shell />
+      </SettingsProvider>
     </SafeAreaProvider>
   );
 }

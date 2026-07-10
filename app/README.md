@@ -18,12 +18,20 @@ Download `swiss-army-camera.apk` on your phone and open it (allow "install unkno
 
 | Tab | Status | Notes |
 | --- | --- | --- |
-| **Capture** | ✅ Works | Photo capture, front/rear flip, flash (off/auto/on), zoom presets, rule-of-thirds grid, electronic level (accelerometer), center reticle, self-timer (3s/10s). Saves in-app + best-effort to Photos. |
-| **Timelapse** | ✅ Works | Intervalometer (1–30 s), live frame counter, frames saved as a set. Frame→MP4 stitching is Phase 3 (native). |
+| **Capture** | ✅ Works | **Photo + video** modes. Front/rear flip, flash (off/auto/on), **torch**, **continuous zoom slider**, rule-of-thirds / golden / square grid, electronic level (accelerometer), reticle, self-timer. Video honors the mic + resolution settings. Saves in-app + optional auto-save to Photos. |
+| **Timelapse** | ✅ Works | Intervalometer (1–60 s), live frame counter, frames saved as a set and **played back** in Library. Frame→MP4 stitching is Phase 3 (native). |
 | **Lab** | ✅ Works | Live viewfinder with real overlay guides + look tints. On-sensor GPU pixel analysis is Phase 6 (clearly marked). |
-| **Library** | ✅ Works | Local-first grid, fullscreen viewer, delete, save-to-Photos. Lists timelapse sets. |
-| **Settings** | ✅ Works | Honest capability map, privacy commitments, version, links. |
+| **Library** | ✅ Works | Local-first grid of **photos + videos**, fullscreen photo viewer, **video player**, **timelapse playback** (8/12/24 fps), **share**, save-to-Photos, delete. |
+| **Settings** | ✅ Works | Full **customization hub** — see below — plus honest capability map, privacy, storage usage, reset. |
 | **Studio / Screen / Attachments** | 🔧 Staged | Honest "requires native module" screens matching the site's roadmap. |
+
+### Everything is customizable (Settings — persisted across launches)
+- **Photo:** aspect ratio (4:3 / 16:9 / 1:1), **picture size** (real device-detected resolutions), JPEG quality.
+- **Video:** resolution (2160p / 1080p / 720p / 480p), bitrate, max duration.
+- **Audio:** microphone on/off, **mic gain**, feedback volume. *(Input mic-gain is stored now and applies with the native audio pipeline — Phase 5; mic on/off is live today.)*
+- **Capture defaults:** flash, grid + grid type, level, reticle, self-timer, auto-save to Photos, haptics.
+- **Timelapse:** default interval, output frame rate.
+- **Storage:** usage readout + clear all in-app media. Plus reset-to-defaults.
 
 Everything is **local-first / private by default**. "Save to Photos" is an explicit action.
 

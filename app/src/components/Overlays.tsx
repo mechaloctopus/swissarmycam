@@ -3,15 +3,26 @@ import { View, Text, StyleSheet, Animated, Easing } from "react-native";
 import { Accelerometer } from "expo-sensors";
 import { C, F } from "../theme";
 
-/** Rule-of-thirds grid. */
-export function GridOverlay() {
+export type GridKind = "thirds" | "golden" | "square";
+
+/** Composition grid — thirds, golden ratio, or a centered square. */
+export function GridOverlay({ kind = "thirds" }: { kind?: GridKind }) {
+  if (kind === "square") {
+    return (
+      <View pointerEvents="none" style={[StyleSheet.absoluteFill, { alignItems: "center", justifyContent: "center" }]}>
+        <View style={{ width: "100%", aspectRatio: 1, borderColor: "rgba(255,255,255,0.28)", borderTopWidth: StyleSheet.hairlineWidth, borderBottomWidth: StyleSheet.hairlineWidth }} />
+      </View>
+    );
+  }
+  // thirds = 33.33/66.66 ; golden ≈ 38.2/61.8
+  const stops = kind === "golden" ? [38.2, 61.8] : [33.333, 66.666];
   return (
     <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-      {[1, 2].map((i) => (
-        <View key={"v" + i} style={[styles.line, { left: `${(i * 100) / 3}%`, width: StyleSheet.hairlineWidth, top: 0, bottom: 0 }]} />
+      {stops.map((p, i) => (
+        <View key={"v" + i} style={[styles.line, { left: `${p}%`, width: StyleSheet.hairlineWidth, top: 0, bottom: 0 }]} />
       ))}
-      {[1, 2].map((i) => (
-        <View key={"h" + i} style={[styles.line, { top: `${(i * 100) / 3}%`, height: StyleSheet.hairlineWidth, left: 0, right: 0 }]} />
+      {stops.map((p, i) => (
+        <View key={"h" + i} style={[styles.line, { top: `${p}%`, height: StyleSheet.hairlineWidth, left: 0, right: 0 }]} />
       ))}
     </View>
   );

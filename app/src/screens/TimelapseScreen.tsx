@@ -6,17 +6,19 @@ import { C, F } from "../theme";
 import { Label, Mono } from "../components/ui";
 import { GridOverlay } from "../components/Overlays";
 import { newTimelapseSession, saveTimelapseFrame } from "../store";
+import { useSettings } from "../settings";
 
-const INTERVALS = [1, 2, 5, 10, 30];
+const INTERVALS = [1, 2, 5, 10, 30, 60];
 
 export default function TimelapseScreen() {
+  const { settings, update } = useSettings();
   const camRef = useRef<CameraView>(null);
   const [ready, setReady] = useState(false);
-  const [interval, setIntervalSec] = useState(2);
   const [running, setRunning] = useState(false);
   const [frames, setFrames] = useState(0);
   const [elapsed, setElapsed] = useState(0);
 
+  const interval = settings.tlInterval;
   const sessionRef = useRef<string | null>(null);
   const idxRef = useRef(0);
   const capturingRef = useRef(false);
@@ -31,14 +33,14 @@ export default function TimelapseScreen() {
       if (p?.uri) {
         await saveTimelapseFrame(sessionRef.current, p.uri, idxRef.current++);
         setFrames(idxRef.current);
-        Haptics.selectionAsync();
+        if (settings.haptics) Haptics.selectionAsync();
       }
     } catch {
-      // drop this frame, keep rolling
+      // drop frame, keep rolling
     } finally {
       capturingRef.current = false;
     }
-  }, []);
+  }, [settings.haptics]);
 
   const stop = useCallback(() => {
     if (timerRef.current) clearInterval(timerRef.current);
@@ -55,23 +57,22 @@ export default function TimelapseScreen() {
     setFrames(0);
     setElapsed(0);
     setRunning(true);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    grab(); // first frame immediately
+    if (settings.haptics) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    grab();
     timerRef.current = setInterval(grab, interval * 1000);
     elapsedRef.current = setInterval(() => setElapsed((e) => e + 1), 1000);
-  }, [ready, interval, grab]);
+  }, [ready, interval, grab, settings.haptics]);
 
   useEffect(() => () => stop(), [stop]);
 
   const mmss = (s: number) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
-  // at 24fps, saved frames yield this much finished footage
-  const outSec = (frames / 24).toFixed(1);
+  const outSec = (frames / settings.tlOutputFps).toFixed(1);
 
   return (
     <View style={styles.root}>
       <View style={styles.viewport}>
         <CameraView ref={camRef} style={StyleSheet.absoluteFill} facing="back" onCameraReady={() => setReady(true)} />
-        <GridOverlay />
+        {settings.grid && <GridOverlay kind={settings.gridType} />}
         <View style={styles.hud}>
           <View style={[styles.recPill, running && { borderColor: C.red }]}>
             <View style={[styles.recDot, { backgroundColor: running ? C.red : C.inkMute }]} />
@@ -87,13 +88,13 @@ export default function TimelapseScreen() {
         <View style={styles.stats}>
           <Stat k="Frames" v={String(frames)} />
           <Stat k="Interval" v={`${interval}s`} />
-          <Stat k="Output @24fps" v={`${outSec}s`} accent />
+          <Stat k={`Output @${settings.tlOutputFps}fps`} v={`${outSec}s`} accent />
         </View>
 
         <Text style={styles.sub}>Interval</Text>
         <View style={styles.chips}>
           {INTERVALS.map((s) => (
-            <Pressable key={s} disabled={running} onPress={() => setIntervalSec(s)} style={[styles.chip, interval === s && styles.chipOn, running && { opacity: 0.4 }]}>
+            <Pressable key={s} disabled={running} onPress={() => update({ tlInterval: s })} style={[styles.chip, interval === s && styles.chipOn, running && { opacity: 0.4 }]}>
               <Text style={{ color: interval === s ? "#fff" : C.inkSoft, fontFamily: F.mono, fontSize: 13 }}>{s}s</Text>
             </Pressable>
           ))}
@@ -102,12 +103,15 @@ export default function TimelapseScreen() {
         <Pressable onPress={running ? stop : start} disabled={!ready} style={[styles.action, running ? styles.actionStop : styles.actionGo, !ready && { opacity: 0.5 }]}>
           <Text style={styles.actionText}>{running ? "■  Stop capture" : "●  Start timelapse"}</Text>
         </Pressable>
+        <Mono color={C.inkMute} size={11} style={{ marginTop: 12, textAlign: "center" }}>
+          Frames save as a set · play them back in Library
+        </Mono>
 
         <View style={styles.note}>
           <Mono color={C.device} size={10}>DEVICE-DEPENDENT</Mono>
           <Text style={styles.noteText}>
-            Frames are saved locally as a set. Stitching frames into a finished MP4 (with easing and
-            deflicker) ships with the native video module — Phase 3 on the roadmap. Your frames are safe until then.
+            Frames are saved locally and play back as a preview in Library. Stitching them into a
+            finished MP4 (with easing and deflicker) ships with the native video module — Phase 3.
           </Text>
         </View>
       </ScrollView>
