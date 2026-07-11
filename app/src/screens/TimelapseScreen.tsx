@@ -10,7 +10,7 @@ import { useSettings } from "../settings";
 
 const INTERVALS = [1, 2, 5, 10, 30, 60];
 
-export default function TimelapseScreen() {
+export default function TimelapseScreen({ focused }: { focused: boolean }) {
   const { settings, update } = useSettings();
   const camRef = useRef<CameraView>(null);
   const [ready, setReady] = useState(false);
@@ -65,13 +65,18 @@ export default function TimelapseScreen() {
 
   useEffect(() => () => stop(), [stop]);
 
+  // Pause capture when the tab loses focus.
+  useEffect(() => {
+    if (!focused && running) stop();
+  }, [focused, running, stop]);
+
   const mmss = (s: number) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
   const outSec = (frames / settings.tlOutputFps).toFixed(1);
 
   return (
     <View style={styles.root}>
       <View style={styles.viewport}>
-        <CameraView ref={camRef} style={StyleSheet.absoluteFill} facing="back" onCameraReady={() => setReady(true)} />
+        <CameraView ref={camRef} style={StyleSheet.absoluteFill} facing="back" active={focused} onCameraReady={() => setReady(true)} />
         {settings.grid && <GridOverlay kind={settings.gridType} />}
         <View style={styles.hud}>
           <View style={[styles.recPill, running && { borderColor: C.red }]}>

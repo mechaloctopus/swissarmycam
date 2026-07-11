@@ -17,7 +17,7 @@ const TOGGLES: { id: Mode; name: string; real: boolean }[] = [
   { id: "false", name: "False-colour scope", real: false },
 ];
 
-export default function LabScreen() {
+export default function LabScreen({ focused }: { focused: boolean }) {
   const [active, setActive] = useState<Set<Mode>>(new Set(["reticle"]));
   const toggle = (m: Mode) =>
     setActive((s) => {
@@ -30,7 +30,7 @@ export default function LabScreen() {
   return (
     <View style={styles.root}>
       <View style={styles.viewport}>
-        <CameraView style={StyleSheet.absoluteFill} facing="back" />
+        <CameraView style={StyleSheet.absoluteFill} facing="back" active={focused} />
         {on("grid") && <GridOverlay />}
         {on("reticle") && <Reticle />}
         {on("level") && <LevelIndicator />}

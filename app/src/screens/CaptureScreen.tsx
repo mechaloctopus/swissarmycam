@@ -16,7 +16,17 @@ const FLASH_CYCLE: FlashMode[] = ["off", "auto", "on"];
 const FLASH_GLYPH: Record<string, string> = { off: "⚡ off", auto: "⚡ auto", on: "⚡ on" };
 const TIMERS = [0, 3, 10];
 
-export default function CaptureScreen() {
+// Approximate lens stops. On devices whose camera exposes an ultra-wide through
+// the zoom range (e.g. Pixel 9 Pro), zoom 0 reaches ~0.5×. Values are perceptual
+// (CameraX linear zoom); precise per-lens calibration lands with the native module.
+const STOPS = [
+  { label: "0.5×", z: 0 },
+  { label: "1×", z: 0.08 },
+  { label: "2×", z: 0.2 },
+  { label: "5×", z: 0.6 },
+];
+
+export default function CaptureScreen({ focused }: { focused: boolean }) {
   const { settings, update } = useSettings();
   const camRef = useRef<CameraView>(null);
   const [micPerm, requestMic] = useMicrophonePermissions();
@@ -25,7 +35,7 @@ export default function CaptureScreen() {
   const [mode, setMode] = useState<CameraMode>("picture");
   const [zoom, setZoom] = useState(0);
   const [torch, setTorch] = useState(false);
-  const [ready, setReady] = useState(false);
+  const [everReady, setEverReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const [recording, setRecording] = useState(false);
   const [elapsed, setElapsed] = useState(0);
@@ -35,10 +45,23 @@ export default function CaptureScreen() {
 
   const flashAnim = useRef(new Animated.Value(0)).current;
   const elapsedTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const sizesFetched = useRef(false);
 
   useEffect(() => {
     listMedia().then((m) => setLast(m[0] ?? null));
   }, []);
+
+  // Fallback: never let the init overlay stick permanently.
+  useEffect(() => {
+    if (!focused || everReady) return;
+    const t = setTimeout(() => setEverReady(true), 2500);
+    return () => clearTimeout(t);
+  }, [focused, everReady]);
+
+  // If we leave the tab mid-recording, stop cleanly.
+  useEffect(() => {
+    if (!focused && recording) camRef.current?.stopRecording();
+  }, [focused, recording]);
 
   const showToast = useCallback((m: string) => {
     setToast(m);
@@ -52,9 +75,17 @@ export default function CaptureScreen() {
     [settings.haptics]
   );
 
+  const onReady = useCallback(() => {
+    setEverReady(true);
+    if (!sizesFetched.current) {
+      sizesFetched.current = true;
+      camRef.current?.getAvailablePictureSizesAsync?.().then((s) => s && savePictureSizes(s)).catch(() => {});
+    }
+  }, []);
+
   /* ---------- Photo ---------- */
   const takePhoto = useCallback(async () => {
-    if (!camRef.current || busy || !ready) return;
+    if (!camRef.current || busy) return;
     setBusy(true);
     try {
       haptic(Haptics.ImpactFeedbackStyle.Medium);
@@ -73,7 +104,7 @@ export default function CaptureScreen() {
     } finally {
       setBusy(false);
     }
-  }, [busy, ready, settings.jpegQuality, settings.autoSaveToPhotos, flashAnim, haptic, showToast]);
+  }, [busy, settings.jpegQuality, settings.autoSaveToPhotos, flashAnim, haptic, showToast]);
 
   const onShutterPhoto = useCallback(() => {
     const t = settings.timerDefault;
@@ -94,22 +125,12 @@ export default function CaptureScreen() {
   }, [settings.timerDefault, takePhoto, haptic]);
 
   /* ---------- Video ---------- */
-  const startElapsed = () => {
+  const startRecording = useCallback(async () => {
+    if (!camRef.current || recording) return;
+    if (settings.micEnabled && !micPerm?.granted) await requestMic();
+    setRecording(true);
     setElapsed(0);
     elapsedTimer.current = setInterval(() => setElapsed((e) => e + 1), 1000);
-  };
-  const stopElapsed = () => {
-    if (elapsedTimer.current) clearInterval(elapsedTimer.current);
-    elapsedTimer.current = null;
-  };
-
-  const startRecording = useCallback(async () => {
-    if (!camRef.current || recording || !ready) return;
-    if (settings.micEnabled && !micPerm?.granted) {
-      await requestMic();
-    }
-    setRecording(true);
-    startElapsed();
     haptic(Haptics.ImpactFeedbackStyle.Heavy);
     try {
       const opts: { maxDuration?: number } = {};
@@ -125,9 +146,10 @@ export default function CaptureScreen() {
       showToast("Recording failed");
     } finally {
       setRecording(false);
-      stopElapsed();
+      if (elapsedTimer.current) clearInterval(elapsedTimer.current);
+      elapsedTimer.current = null;
     }
-  }, [recording, ready, settings.micEnabled, settings.videoMaxSeconds, settings.autoSaveToPhotos, micPerm, requestMic, haptic, showToast]);
+  }, [recording, settings.micEnabled, settings.videoMaxSeconds, settings.autoSaveToPhotos, micPerm, requestMic, haptic, showToast]);
 
   const stopRecording = useCallback(() => {
     if (!recording) return;
@@ -136,8 +158,8 @@ export default function CaptureScreen() {
   }, [recording, haptic]);
 
   const mmss = (s: number) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
-  const zoomLabel = `${(1 + zoom * 9).toFixed(1)}×`;
-  const resLabel = mode === "picture" ? (settings.pictureSize ? settings.pictureSize.split("x")[0] + "px" : settings.cameraRatio) : settings.videoQuality;
+  const activeStop = STOPS.find((s) => Math.abs(s.z - zoom) < 0.02);
+  const resLabel = mode === "picture" ? (settings.pictureSize ? settings.pictureSize.split("x")[0] + "px" : "PHOTO") : settings.videoQuality;
 
   return (
     <View style={styles.root}>
@@ -146,18 +168,16 @@ export default function CaptureScreen() {
         style={StyleSheet.absoluteFill}
         facing={facing}
         mode={mode}
+        active={focused}
         flash={settings.flashDefault}
         enableTorch={torch}
         zoom={zoom}
-        ratio={settings.cameraRatio}
         pictureSize={mode === "picture" && settings.pictureSize ? settings.pictureSize : undefined}
-        videoQuality={settings.videoQuality}
+        videoQuality={mode === "video" ? settings.videoQuality : undefined}
         mute={!settings.micEnabled}
         animateShutter={false}
-        onCameraReady={() => {
-          setReady(true);
-          camRef.current?.getAvailablePictureSizesAsync?.().then((s) => s && savePictureSizes(s)).catch(() => {});
-        }}
+        onCameraReady={onReady}
+        onMountError={() => showToast("Camera error — retrying")}
       />
 
       {settings.grid && <GridOverlay kind={settings.gridType} />}
@@ -184,10 +204,21 @@ export default function CaptureScreen() {
         )}
       </View>
 
-      {/* zoom slider */}
+      {/* lens stops */}
+      <View style={styles.stops}>
+        {STOPS.map((s) => {
+          const on = activeStop?.label === s.label;
+          return (
+            <Pressable key={s.label} onPress={() => setZoom(s.z)} style={[styles.stop, on && styles.stopOn]}>
+              <Text style={{ color: on ? "#fff" : C.inkSoft, fontFamily: F.mono, fontSize: 12 }}>{s.label}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
+      {/* fine zoom slider */}
       <View style={styles.zoomWrap}>
-        <Mono color={C.inkSoft} size={11}>{zoomLabel}</Mono>
-        <Slider value={zoom} min={0} max={1} step={0.01} onChange={setZoom} width={200} />
+        <Slider value={zoom} min={0} max={1} step={0.01} onChange={setZoom} width={210} />
       </View>
 
       {/* tool drawer */}
@@ -221,11 +252,11 @@ export default function CaptureScreen() {
         </Pressable>
 
         {mode === "picture" ? (
-          <Pressable onPress={onShutterPhoto} disabled={busy || !ready} style={styles.shutterOuter}>
+          <Pressable onPress={onShutterPhoto} disabled={busy} style={styles.shutterOuter}>
             <View style={[styles.shutterInner, busy && { backgroundColor: C.redBright }]}>{busy ? <ActivityIndicator color="#fff" /> : null}</View>
           </Pressable>
         ) : (
-          <Pressable onPress={recording ? stopRecording : startRecording} disabled={!ready} style={styles.shutterOuter}>
+          <Pressable onPress={recording ? stopRecording : startRecording} style={styles.shutterOuter}>
             <View style={recording ? styles.recStop : styles.shutterInner} />
           </Pressable>
         )}
@@ -247,7 +278,7 @@ export default function CaptureScreen() {
         </View>
       )}
 
-      {!ready && (
+      {!everReady && (
         <View style={styles.loading}>
           <ActivityIndicator color={C.red} />
           <Mono color={C.inkMute} size={11} style={{ marginTop: 10 }}>INITIALISING SENSOR…</Mono>
@@ -273,7 +304,10 @@ const styles = StyleSheet.create({
   top: { position: "absolute", top: 12, left: 14, right: 14, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   readPill: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "rgba(0,0,0,0.45)", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 40 },
   recDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: C.red },
-  zoomWrap: { position: "absolute", bottom: 214, alignSelf: "center", alignItems: "center", gap: 2, backgroundColor: "rgba(0,0,0,0.35)", paddingHorizontal: 14, paddingVertical: 4, borderRadius: 16 },
+  stops: { position: "absolute", bottom: 250, alignSelf: "center", flexDirection: "row", gap: 6, backgroundColor: "rgba(0,0,0,0.4)", borderRadius: 40, padding: 4 },
+  stop: { width: 44, height: 32, borderRadius: 40, alignItems: "center", justifyContent: "center" },
+  stopOn: { backgroundColor: "rgba(224,35,28,0.9)" },
+  zoomWrap: { position: "absolute", bottom: 208, alignSelf: "center", backgroundColor: "rgba(0,0,0,0.3)", paddingHorizontal: 14, borderRadius: 20 },
   tools: { position: "absolute", bottom: 150, left: 0, right: 0, flexDirection: "row", justifyContent: "center", gap: 22 },
   mini: { alignItems: "center", width: 58 },
   miniIcon: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.4)", borderWidth: 1, borderColor: C.lineStrong },

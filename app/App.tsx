@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { View, Text, StyleSheet, Pressable, ScrollView } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
@@ -49,32 +49,55 @@ const SOON: Record<string, ComingSoon> = {
   },
 };
 
+function Screen({ tabKey, focused }: { tabKey: string; focused: boolean }) {
+  switch (tabKey) {
+    case "capture": return <CaptureScreen focused={focused} />;
+    case "timelapse": return <TimelapseScreen focused={focused} />;
+    case "lab": return <LabScreen focused={focused} />;
+    case "library": return <LibraryScreen focused={focused} />;
+    case "settings": return <SettingsScreen focused={focused} />;
+    default: return <ComingSoonScreen data={SOON[tabKey]} />;
+  }
+}
+
 function Shell() {
   const insets = useSafeAreaInsets();
   const [active, setActive] = useState("capture");
   const [permission, requestPermission] = useCameraPermissions();
-  const tab = TABS.find((t) => t.key === active)!;
+  const [mounted, setMounted] = useState<Set<string>>(new Set());
+  const activeTab = TABS.find((t) => t.key === active)!;
 
-  const renderScreen = () => {
-    if (tab.kind === "camera") {
-      if (!permission) return <Splash label="Checking permissions…" />;
-      if (!permission.granted) return <PermissionGate onGrant={requestPermission} canAsk={permission.canAskAgain} />;
-    }
-    switch (active) {
-      case "capture": return <CaptureScreen />;
-      case "timelapse": return <TimelapseScreen />;
-      case "lab": return <LabScreen />;
-      case "library": return <LibraryScreen />;
-      case "settings": return <SettingsScreen />;
-      default: return <ComingSoonScreen data={SOON[active]} />;
-    }
-  };
+  const cameraReady = !!permission?.granted;
+
+  // Keep visited screens mounted (so returning doesn't re-init the camera).
+  useEffect(() => {
+    const t = TABS.find((x) => x.key === active)!;
+    if (t.kind === "camera" && !cameraReady) return; // wait for permission before mounting camera screens
+    setMounted((m) => (m.has(active) ? m : new Set([...m, active])));
+  }, [active, cameraReady]);
+
+  const showGate = activeTab.kind === "camera" && permission && !permission.granted;
+  const showPermSplash = activeTab.kind === "camera" && !permission;
 
   return (
     <View style={styles.root}>
       <StatusBar style="light" />
-      <View style={{ flex: 1, paddingTop: insets.top }} key={active}>
-        {renderScreen()}
+
+      <View style={styles.stage}>
+        {TABS.filter((t) => mounted.has(t.key)).map((t) => {
+          const isActive = t.key === active;
+          return (
+            <View
+              key={t.key}
+              style={[StyleSheet.absoluteFill, { paddingTop: insets.top, display: isActive ? "flex" : "none" }]}
+            >
+              <Screen tabKey={t.key} focused={isActive} />
+            </View>
+          );
+        })}
+
+        {showPermSplash && <View style={[StyleSheet.absoluteFill, { paddingTop: insets.top }]}><Splash label="Checking permissions…" /></View>}
+        {showGate && <View style={[StyleSheet.absoluteFill, { paddingTop: insets.top }]}><PermissionGate onGrant={requestPermission} canAsk={permission!.canAskAgain} /></View>}
       </View>
 
       <View style={[styles.tabbarWrap, { paddingBottom: Math.max(insets.bottom, 8) }]}>
@@ -132,6 +155,7 @@ export default function App() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: C.bg },
+  stage: { flex: 1, position: "relative" },
   center: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32, backgroundColor: C.bg },
   gateTitle: { color: C.ink, fontFamily: F.sansMed, fontSize: 26, fontWeight: "700", letterSpacing: -0.5, marginTop: 24 },
   gateText: { color: C.inkSoft, fontSize: 14.5, lineHeight: 22, textAlign: "center", marginTop: 12, maxWidth: 340 },

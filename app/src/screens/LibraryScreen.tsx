@@ -16,7 +16,7 @@ type Viewer =
   | { type: "tl"; session: TLSession }
   | null;
 
-export default function LibraryScreen() {
+export default function LibraryScreen({ focused }: { focused: boolean }) {
   const [media, setMedia] = useState<MediaItem[]>([]);
   const [sessions, setSessions] = useState<TLSession[]>([]);
   const [viewer, setViewer] = useState<Viewer>(null);
@@ -29,8 +29,8 @@ export default function LibraryScreen() {
     setSessions(await listTimelapseSessions());
   }, []);
   useEffect(() => {
-    load();
-  }, [load]);
+    if (focused) load();
+  }, [focused, load]);
 
   const flash = (m: string) => {
     setToast(m);

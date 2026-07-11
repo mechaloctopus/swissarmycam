@@ -27,7 +27,7 @@ const PRIVACY = [
   "Trademark & brand under review before launch.",
 ];
 
-export default function SettingsScreen() {
+export default function SettingsScreen({ focused }: { focused: boolean }) {
   const { settings, update, reset } = useSettings();
   const [sizes, setSizes] = useState<string[]>([]);
   const [bytes, setBytes] = useState(0);
@@ -39,7 +39,10 @@ export default function SettingsScreen() {
     storageBytes().then(setBytes);
     countMedia().then(setCounts);
   };
-  useEffect(refresh, []);
+  useEffect(() => {
+    if (focused) refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focused]);
 
   const confirmClear = () =>
     Alert.alert("Clear in-app media?", "Deletes all photos, videos and timelapse frames stored inside the app. Anything you saved to Photos stays.", [
