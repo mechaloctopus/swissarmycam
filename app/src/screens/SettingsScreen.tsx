@@ -14,7 +14,7 @@ const CAPS: { name: string; level: string; tone: string }[] = [
   { name: "Resolution / quality / mic — customizable", level: "Possible now", tone: C.go },
   { name: "Grid · level · reticle · self-timer", level: "Possible now", tone: C.go },
   { name: "Interval timelapse (frames)", level: "Possible now", tone: C.go },
-  { name: "Colour palette + OCR text (on-device)", level: "Possible now", tone: C.go },
+  { name: "Colour palette · OCR · scene labeling (on-device)", level: "Possible now", tone: C.go },
   { name: "Layer compositor + photo editor", level: "Possible now", tone: C.go },
   { name: "Manual ISO / shutter / RAW", level: "Requires native code", tone: C.native },
   { name: "Input mic-gain / audio DSP", level: "Requires native code", tone: C.native },

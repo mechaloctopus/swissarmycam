@@ -2,7 +2,37 @@ import React from "react";
 import { View, Text, StyleSheet, ScrollView } from "react-native";
 import { C, F } from "../theme";
 import { Mono } from "./ui";
-import { Swatch, TextScan, readableInk } from "../analyze";
+import { Swatch, TextScan, SceneLabel, readableInk } from "../analyze";
+
+/** Renders scene / object labels with confidence bars. */
+export function SceneResult({ labels, loading }: { labels: SceneLabel[]; loading?: boolean }) {
+  if (loading) {
+    return (
+      <View style={styles.wrap}>
+        <Mono color={C.inkMute} size={11}>IDENTIFYING SCENE…</Mono>
+      </View>
+    );
+  }
+  if (!labels.length) return null;
+  return (
+    <View style={styles.wrap}>
+      <Mono color={C.inkMute} size={10} style={{ marginBottom: 10, letterSpacing: 1 }}>
+        SCENE · {labels.length} LABELS
+      </Mono>
+      <View style={{ gap: 8 }}>
+        {labels.map((l) => (
+          <View key={l.text} style={styles.sceneRow}>
+            <Text style={styles.sceneText}>{l.text}</Text>
+            <View style={styles.sceneBarTrack}>
+              <View style={[styles.sceneBarFill, { width: `${Math.round(l.confidence * 100)}%` }]} />
+            </View>
+            <Text style={styles.scenePct}>{Math.round(l.confidence * 100)}%</Text>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
 
 /** Renders OCR / extracted-text results. */
 export function TextResult({ scan, loading }: { scan: TextScan | null; loading?: boolean }) {
@@ -61,4 +91,9 @@ const styles = StyleSheet.create({
   label: { fontFamily: F.mono, fontSize: 8.5, opacity: 0.8, marginTop: 2, textTransform: "uppercase", letterSpacing: 0.3 },
   textBox: { maxHeight: 130, backgroundColor: C.bg2, borderWidth: 1, borderColor: C.line, borderRadius: 8, padding: 12 },
   text: { color: C.ink, fontFamily: F.mono, fontSize: 13, lineHeight: 19 },
+  sceneRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  sceneText: { color: C.inkSoft, fontFamily: F.sans, fontSize: 13, width: 96 },
+  sceneBarTrack: { flex: 1, height: 6, borderRadius: 3, backgroundColor: C.lineSoft, overflow: "hidden" },
+  sceneBarFill: { height: 6, backgroundColor: C.red, borderRadius: 3 },
+  scenePct: { color: C.inkMute, fontFamily: F.mono, fontSize: 10.5, width: 34, textAlign: "right" },
 });

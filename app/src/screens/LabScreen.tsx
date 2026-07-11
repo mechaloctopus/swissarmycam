@@ -4,8 +4,8 @@ import { CameraView } from "expo-camera";
 import { C, F } from "../theme";
 import { Label, Mono } from "../components/ui";
 import { GridOverlay, Reticle, LevelIndicator } from "../components/Overlays";
-import { PalettePanel, TextResult } from "../components/PalettePanel";
-import { extractPalette, extractText, Swatch, TextScan } from "../analyze";
+import { PalettePanel, TextResult, SceneResult } from "../components/PalettePanel";
+import { extractPalette, extractText, labelScene, Swatch, TextScan, SceneLabel } from "../analyze";
 
 type Mode = "grid" | "reticle" | "level" | "thirds-safe" | "warm" | "cool" | "false";
 
@@ -26,6 +26,8 @@ export default function LabScreen({ focused }: { focused: boolean }) {
   const [analyzing, setAnalyzing] = useState(false);
   const [ocr, setOcr] = useState<TextScan | null>(null);
   const [reading, setReading] = useState(false);
+  const [scene, setScene] = useState<SceneLabel[]>([]);
+  const [identifying, setIdentifying] = useState(false);
   const toggle = (m: Mode) =>
     setActive((s) => {
       const n = new Set(s);
@@ -57,6 +59,19 @@ export default function LabScreen({ focused }: { focused: boolean }) {
       setOcr({ text: "", lines: 0, words: 0 });
     } finally {
       setReading(false);
+    }
+  };
+
+  const identifyFrame = async () => {
+    if (!camRef.current || identifying) return;
+    setIdentifying(true);
+    try {
+      const p = await camRef.current.takePictureAsync({ quality: 0.7, skipProcessing: true });
+      if (p?.uri) setScene(await labelScene(p.uri));
+    } catch {
+      setScene([]);
+    } finally {
+      setIdentifying(false);
     }
   };
 
@@ -99,18 +114,22 @@ export default function LabScreen({ focused }: { focused: boolean }) {
           <Pressable onPress={readFrame} disabled={reading} style={[styles.analyzeBtn, styles.ocrBtn, { flex: 1 }, reading && { opacity: 0.6 }]}>
             <Text style={styles.analyzeText}>{reading ? "Reading…" : "⌶  Read text"}</Text>
           </Pressable>
+          <Pressable onPress={identifyFrame} disabled={identifying} style={[styles.analyzeBtn, styles.ocrBtn, { flex: 1 }, identifying && { opacity: 0.6 }]}>
+            <Text style={styles.analyzeText}>{identifying ? "Scanning…" : "⌘  What's this?"}</Text>
+          </Pressable>
         </View>
         <PalettePanel swatches={palette} loading={analyzing} />
         <TextResult scan={ocr} loading={reading} />
+        <SceneResult labels={scene} loading={identifying} />
 
         <View style={styles.note}>
           <Mono color={C.native} size={10}>ON-DEVICE</Mono>
           <Text style={styles.noteText}>
-            Colour-palette extraction runs on-device from a captured frame — real visual
-            intelligence. Overlays above are real view-layer guides and looks. Deeper pixel
-            analysis —
-            edge detection, motion difference, frame stacking and calibrated false-colour mapping —
-            runs on the GPU shader pipeline in the native module (Phase 6). Modes marked{" "}
+            Colour palette, text extraction and scene/object labeling all run on-device from a
+            captured frame — real visual intelligence, no network required. Overlays above are
+            real view-layer guides and looks. Deeper pixel analysis — edge detection, motion
+            difference, frame stacking and calibrated false-colour mapping — runs on the GPU
+            shader pipeline in the native module (Phase 6). Modes marked{" "}
             <Text style={{ color: C.native }}>GPU</Text> are previews of that intent, not the final compute.
           </Text>
         </View>
@@ -158,8 +177,8 @@ const styles = StyleSheet.create({
   note: { marginTop: 22, backgroundColor: C.surface, borderWidth: 1, borderColor: C.line, borderLeftWidth: 3, borderLeftColor: C.native, borderRadius: 8, padding: 16, gap: 8 },
   noteText: { color: C.inkMute, fontSize: 13, lineHeight: 19 },
   viLabel: { color: C.inkMute, fontFamily: F.mono, fontSize: 11, letterSpacing: 1, textTransform: "uppercase", marginTop: 22, marginBottom: 10 },
-  analyzeBtn: { backgroundColor: C.red, borderRadius: 8, paddingVertical: 14, alignItems: "center" },
+  analyzeBtn: { backgroundColor: C.red, borderRadius: 8, paddingVertical: 13, alignItems: "center", paddingHorizontal: 4 },
   ocrBtn: { backgroundColor: C.surface, borderWidth: 1, borderColor: C.lineStrong },
-  viRow: { flexDirection: "row", gap: 8 },
-  analyzeText: { color: "#fff", fontFamily: F.sansMed, fontWeight: "700", fontSize: 14 },
+  viRow: { flexDirection: "row", gap: 6 },
+  analyzeText: { color: "#fff", fontFamily: F.sansMed, fontWeight: "700", fontSize: 12.5 },
 });

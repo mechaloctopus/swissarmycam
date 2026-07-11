@@ -1,8 +1,10 @@
 import { getColors } from "react-native-image-colors";
 import TextRecognition from "@react-native-ml-kit/text-recognition";
+import ImageLabeling from "@react-native-ml-kit/image-labeling";
 
 export type Swatch = { label: string; hex: string };
 export type TextScan = { text: string; lines: number; words: number };
+export type SceneLabel = { text: string; confidence: number };
 
 /** On-device OCR — extract text from an image URI (MLKit, offline). */
 export async function extractText(uri: string): Promise<TextScan> {
@@ -10,6 +12,16 @@ export async function extractText(uri: string): Promise<TextScan> {
   const lines = r.blocks.reduce((a, b) => a + b.lines.length, 0);
   const words = r.blocks.reduce((a, b) => a + b.lines.reduce((x, l) => x + l.elements.length, 0), 0);
   return { text: (r.text ?? "").trim(), lines, words };
+}
+
+/** On-device scene / object labeling — what's in the frame (MLKit, offline). */
+export async function labelScene(uri: string): Promise<SceneLabel[]> {
+  const labels = await ImageLabeling.label(uri);
+  return labels
+    .filter((l) => l.confidence >= 0.4)
+    .sort((a, b) => b.confidence - a.confidence)
+    .slice(0, 12)
+    .map((l) => ({ text: l.text, confidence: l.confidence }));
 }
 
 /** Extract a colour palette from an image URI. Works across platforms. */

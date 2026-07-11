@@ -1,12 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { View, Text, StyleSheet, FlatList, Pressable, Dimensions, Modal, Alert, Image as RNImage } from "react-native";
+import { View, Text, StyleSheet, FlatList, Pressable, Dimensions, Modal, Alert, Image as RNImage, ScrollView } from "react-native";
 import { Image } from "expo-image";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { manipulateAsync, FlipType, SaveFormat } from "expo-image-manipulator";
 import { C, F } from "../theme";
 import { Label, Mono } from "../components/ui";
-import { PalettePanel, TextResult } from "../components/PalettePanel";
-import { extractPalette, extractText, Swatch, TextScan } from "../analyze";
+import { PalettePanel, TextResult, SceneResult } from "../components/PalettePanel";
+import { extractPalette, extractText, labelScene, Swatch, TextScan, SceneLabel } from "../analyze";
 import { listMedia, deleteMedia, saveCapture, listTimelapseSessions, deleteTimelapseSession, MediaItem, TLSession } from "../store";
 import { saveToPhotos, shareFile } from "../media";
 
@@ -28,6 +28,8 @@ export default function LibraryScreen({ focused }: { focused: boolean }) {
   const [analyzing, setAnalyzing] = useState(false);
   const [ocr, setOcr] = useState<TextScan | null>(null);
   const [reading, setReading] = useState(false);
+  const [scene, setScene] = useState<SceneLabel[]>([]);
+  const [identifying, setIdentifying] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
@@ -35,6 +37,8 @@ export default function LibraryScreen({ focused }: { focused: boolean }) {
     setAnalyzing(false);
     setOcr(null);
     setReading(false);
+    setScene([]);
+    setIdentifying(false);
   }, [viewer]);
   const width = Dimensions.get("window").width;
   const cell = (width - GAP * (COLS - 1)) / COLS;
@@ -122,11 +126,12 @@ export default function LibraryScreen({ focused }: { focused: boolean }) {
           {viewer?.type === "video" && <VideoViewer uri={viewer.uri} />}
           {viewer?.type === "tl" && <TLPlayer frames={viewer.session.frames} />}
 
-          {viewer?.type === "photo" && (analyzing || analysis.length > 0 || reading || ocr) && (
-            <View style={styles.analysisWrap}>
+          {viewer?.type === "photo" && (analyzing || analysis.length > 0 || reading || ocr || identifying || scene.length > 0) && (
+            <ScrollView style={styles.analysisWrap} nestedScrollEnabled>
               <PalettePanel swatches={analysis} loading={analyzing} />
               <TextResult scan={ocr} loading={reading} />
-            </View>
+              <SceneResult labels={scene} loading={identifying} />
+            </ScrollView>
           )}
 
           <View style={styles.viewerBar}>
@@ -172,6 +177,24 @@ export default function LibraryScreen({ focused }: { focused: boolean }) {
                 style={styles.vBtn}
               >
                 <Text style={styles.vBtnText}>⌶ Text</Text>
+              </Pressable>
+            )}
+            {viewer?.type === "photo" && (
+              <Pressable
+                onPress={async () => {
+                  if (identifying) return;
+                  setIdentifying(true);
+                  try {
+                    setScene(await labelScene(viewer.uri));
+                  } catch {
+                    flash("Scan failed");
+                  } finally {
+                    setIdentifying(false);
+                  }
+                }}
+                style={styles.vBtn}
+              >
+                <Text style={styles.vBtnText}>⌘ Scene</Text>
               </Pressable>
             )}
             {viewer?.type !== "tl" && (
@@ -367,5 +390,5 @@ const styles = StyleSheet.create({
   eBtn: { borderWidth: 1, borderColor: C.lineStrong, backgroundColor: C.surface, paddingHorizontal: 14, paddingVertical: 11, borderRadius: 8 },
   eBtnText: { color: C.inkSoft, fontFamily: F.mono, fontSize: 12.5 },
   editorBar: { flexDirection: "row", gap: 10, justifyContent: "center" },
-  analysisWrap: { position: "absolute", left: 12, right: 12, bottom: 84, backgroundColor: "rgba(11,11,12,0.9)", borderWidth: 1, borderColor: C.line, borderRadius: 12, padding: 12 },
+  analysisWrap: { position: "absolute", left: 12, right: 12, bottom: 84, maxHeight: 280, backgroundColor: "rgba(11,11,12,0.92)", borderWidth: 1, borderColor: C.line, borderRadius: 12, padding: 12 },
 });

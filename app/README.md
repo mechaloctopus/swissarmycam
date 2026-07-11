@@ -12,7 +12,7 @@ near-identical **iOS** build slots in later with iOS-specific camera work (AVFou
 
 Every push to the app publishes an installable APK to the repo's
 [**Releases → `android-latest`**](https://github.com/mechaloctopus/swissarmycam/releases/tag/android-latest).
-Download `swiss-army-camera.apk` on your phone and open it (allow "install unknown apps" if asked).
+Download `lensii.apk` on your phone and open it (allow "install unknown apps" if asked).
 
 ## What works today
 
@@ -20,7 +20,7 @@ Download `swiss-army-camera.apk` on your phone and open it (allow "install unkno
 | --- | --- | --- |
 | **Capture** | ✅ Works | **Photo + video** modes. Front/rear flip, flash (off/auto/on), **torch**, **continuous zoom slider**, rule-of-thirds / golden / square grid, electronic level (accelerometer), reticle, self-timer. Video honors the mic + resolution settings. Saves in-app + optional auto-save to Photos. |
 | **Timelapse** | ✅ Works | Intervalometer (1–60 s), live frame counter, frames saved as a set and **played back** in Library. Frame→MP4 stitching is Phase 3 (native). |
-| **Lab** | ✅ Works | Live viewfinder with real overlay guides + look tints, **plus on-device visual intelligence**: colour-palette analysis (react-native-image-colors) and **OCR text extraction** (MLKit, offline) from a captured frame. Deeper GPU pixel analysis (edge/motion/stacking) is Phase 6. |
+| **Lab** | ✅ Works | Live viewfinder with real overlay guides + look tints, **plus on-device visual intelligence**: colour-palette analysis, **OCR text extraction**, and **scene/object labeling** (all MLKit/react-native-image-colors, offline) from a captured frame. Deeper GPU pixel analysis (edge/motion/stacking) is Phase 6. |
 | **Library** | ✅ Works | Local-first grid of **photos + videos**, fullscreen photo viewer, **photo editor** (rotate / flip / crop 1:1 → saves a non-destructive copy, via expo-image-manipulator), **video player**, **timelapse playback** (8/12/24 fps), **share**, save-to-Photos, delete. |
 | **Studio** | ✅ Works (basic) | Layer **compositor**: pick a base photo, add **text** + **sticker** layers, drag / scale / rotate / opacity, bring-to-front, then **flatten & export** to Library (react-native-view-shot). GPU chroma key + video timeline are the deeper native phase. |
 | **Attachments** | ✅ Works | **Device & module inspector**: model / OS / memory (expo-device), detected camera resolutions, live **sensor scan** (accelerometer / gyro / magnetometer / barometer), and an honest "no external modules detected". USB-C thermal/IR/UV & BLE shutters plug in via the native module (Phase 7). |
