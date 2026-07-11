@@ -2,7 +2,7 @@
   "expo": {
     "name": "Swiss Army Camera",
     "slug": "swiss-army-camera",
-    "version": "0.4.0",
+    "version": "0.5.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "swissarmycamera",
@@ -25,7 +25,7 @@
     },
     "android": {
       "package": "com.swissarmycamera.app",
-      "versionCode": 6,
+      "versionCode": 7,
       "userInterfaceStyle": "dark",
       "adaptiveIcon": {
         "backgroundColor": "#0B0B0C",

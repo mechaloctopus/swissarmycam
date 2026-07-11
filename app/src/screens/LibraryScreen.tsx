@@ -5,6 +5,8 @@ import { useVideoPlayer, VideoView } from "expo-video";
 import { manipulateAsync, FlipType, SaveFormat } from "expo-image-manipulator";
 import { C, F } from "../theme";
 import { Label, Mono } from "../components/ui";
+import { PalettePanel } from "../components/PalettePanel";
+import { extractPalette, Swatch } from "../analyze";
 import { listMedia, deleteMedia, saveCapture, listTimelapseSessions, deleteTimelapseSession, MediaItem, TLSession } from "../store";
 import { saveToPhotos, shareFile } from "../media";
 
@@ -22,7 +24,14 @@ export default function LibraryScreen({ focused }: { focused: boolean }) {
   const [sessions, setSessions] = useState<TLSession[]>([]);
   const [viewer, setViewer] = useState<Viewer>(null);
   const [editUri, setEditUri] = useState<string | null>(null);
+  const [analysis, setAnalysis] = useState<Swatch[]>([]);
+  const [analyzing, setAnalyzing] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+
+  useEffect(() => {
+    setAnalysis([]);
+    setAnalyzing(false);
+  }, [viewer]);
   const width = Dimensions.get("window").width;
   const cell = (width - GAP * (COLS - 1)) / COLS;
 
@@ -109,6 +118,12 @@ export default function LibraryScreen({ focused }: { focused: boolean }) {
           {viewer?.type === "video" && <VideoViewer uri={viewer.uri} />}
           {viewer?.type === "tl" && <TLPlayer frames={viewer.session.frames} />}
 
+          {viewer?.type === "photo" && (analyzing || analysis.length > 0) && (
+            <View style={styles.analysisWrap}>
+              <PalettePanel swatches={analysis} loading={analyzing} />
+            </View>
+          )}
+
           <View style={styles.viewerBar}>
             <Pressable onPress={() => setViewer(null)} style={styles.vBtn}>
               <Text style={styles.vBtnText}>✕ Close</Text>
@@ -116,6 +131,24 @@ export default function LibraryScreen({ focused }: { focused: boolean }) {
             {viewer?.type === "photo" && (
               <Pressable onPress={() => setEditUri(viewer.uri)} style={styles.vBtn}>
                 <Text style={styles.vBtnText}>✎ Edit</Text>
+              </Pressable>
+            )}
+            {viewer?.type === "photo" && (
+              <Pressable
+                onPress={async () => {
+                  if (analyzing) return;
+                  setAnalyzing(true);
+                  try {
+                    setAnalysis(await extractPalette(viewer.uri));
+                  } catch {
+                    flash("Analyse failed");
+                  } finally {
+                    setAnalyzing(false);
+                  }
+                }}
+                style={styles.vBtn}
+              >
+                <Text style={styles.vBtnText}>◉ Analyse</Text>
               </Pressable>
             )}
             {viewer?.type !== "tl" && (
@@ -311,4 +344,5 @@ const styles = StyleSheet.create({
   eBtn: { borderWidth: 1, borderColor: C.lineStrong, backgroundColor: C.surface, paddingHorizontal: 14, paddingVertical: 11, borderRadius: 8 },
   eBtnText: { color: C.inkSoft, fontFamily: F.mono, fontSize: 12.5 },
   editorBar: { flexDirection: "row", gap: 10, justifyContent: "center" },
+  analysisWrap: { position: "absolute", left: 12, right: 12, bottom: 84, backgroundColor: "rgba(11,11,12,0.9)", borderWidth: 1, borderColor: C.line, borderRadius: 12, padding: 12 },
 });

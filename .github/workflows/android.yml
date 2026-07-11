@@ -90,7 +90,7 @@ jobs:
           prerelease: true
           fail_on_unmatched_files: true
           body: |
-            **Swiss Army Camera** — Android build (Phase 2 shell).
+            **Swiss Army Camera** — latest Android build.
 
             - App version: `v${{ steps.ver.outputs.version }}`
             - Build: `#${{ github.run_number }}` · commit `${{ github.sha }}`
@@ -99,11 +99,18 @@ jobs:
             ### Install on your Pixel 9 Pro
             1. Download **`swiss-army-camera.apk`** below (open this page on the phone).
             2. Tap the file → allow "install unknown apps" for your browser/files app if asked.
-            3. Open **Swiss Army Camera** and grant camera access.
+            3. Open **Swiss Army Camera**, grant camera (and mic for video).
 
-            Works today: Capture (photo, flip, flash, zoom, grid/level/reticle, self-timer),
-            Timelapse (interval frames), Lab (live preview overlays), Library (local-first).
-            Studio / Screen / Attachments are honest, staged placeholders.
+            **Works today**
+            - **Capture** — photo + video, flip, flash, torch, 0.5×–zoom, grid (thirds/golden/square), electronic level, reticle, self-timer
+            - **Studio** — layer compositor (base photo + text/sticker layers, drag/scale/rotate/opacity, flatten & export)
+            - **Timelapse** — intervalometer; sets play back in Library
+            - **Lab** — live overlays + on-device colour-palette analysis
+            - **Attachments** — device & sensor inspector
+            - **Library** — photos + videos, photo editor (rotate/flip/crop), video player, timelapse playback, colour analysis, share, save-to-Photos
+            - **Settings** — full customization hub (resolution, mic, video quality, defaults, storage)
+
+            *Screen recording and manual ISO/shutter/RAW need native modules and are staged on the roadmap.*
           files: |
             dist/swiss-army-camera.apk
             dist/swiss-army-camera-v${{ steps.ver.outputs.version }}-${{ github.run_number }}.apk

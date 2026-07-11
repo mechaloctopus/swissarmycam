@@ -1,9 +1,11 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { View, Text, StyleSheet, Pressable, ScrollView } from "react-native";
 import { CameraView } from "expo-camera";
 import { C, F } from "../theme";
 import { Label, Mono } from "../components/ui";
 import { GridOverlay, Reticle, LevelIndicator } from "../components/Overlays";
+import { PalettePanel } from "../components/PalettePanel";
+import { extractPalette, Swatch } from "../analyze";
 
 type Mode = "grid" | "reticle" | "level" | "thirds-safe" | "warm" | "cool" | "false";
 
@@ -18,7 +20,10 @@ const TOGGLES: { id: Mode; name: string; real: boolean }[] = [
 ];
 
 export default function LabScreen({ focused }: { focused: boolean }) {
+  const camRef = useRef<CameraView>(null);
   const [active, setActive] = useState<Set<Mode>>(new Set(["reticle"]));
+  const [palette, setPalette] = useState<Swatch[]>([]);
+  const [analyzing, setAnalyzing] = useState(false);
   const toggle = (m: Mode) =>
     setActive((s) => {
       const n = new Set(s);
@@ -27,10 +32,23 @@ export default function LabScreen({ focused }: { focused: boolean }) {
     });
   const on = (m: Mode) => active.has(m);
 
+  const analyzeFrame = async () => {
+    if (!camRef.current || analyzing) return;
+    setAnalyzing(true);
+    try {
+      const p = await camRef.current.takePictureAsync({ quality: 0.6, skipProcessing: true });
+      if (p?.uri) setPalette(await extractPalette(p.uri));
+    } catch {
+      // ignore
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
   return (
     <View style={styles.root}>
       <View style={styles.viewport}>
-        <CameraView style={StyleSheet.absoluteFill} facing="back" active={focused} />
+        <CameraView ref={camRef} style={StyleSheet.absoluteFill} facing="back" active={focused} />
         {on("grid") && <GridOverlay />}
         {on("reticle") && <Reticle />}
         {on("level") && <LevelIndicator />}
@@ -58,10 +76,18 @@ export default function LabScreen({ focused }: { focused: boolean }) {
           ))}
         </View>
 
+        <Text style={styles.viLabel}>Visual intelligence</Text>
+        <Pressable onPress={analyzeFrame} disabled={analyzing} style={[styles.analyzeBtn, analyzing && { opacity: 0.6 }]}>
+          <Text style={styles.analyzeText}>{analyzing ? "Analysing frame…" : "◉  Capture & analyse frame"}</Text>
+        </Pressable>
+        <PalettePanel swatches={palette} loading={analyzing} />
+
         <View style={styles.note}>
-          <Mono color={C.native} size={10}>REQUIRES NATIVE CODE</Mono>
+          <Mono color={C.native} size={10}>ON-DEVICE</Mono>
           <Text style={styles.noteText}>
-            Overlays here are real view-layer guides and looks. True on-sensor pixel analysis —
+            Colour-palette extraction runs on-device from a captured frame — real visual
+            intelligence. Overlays above are real view-layer guides and looks. Deeper pixel
+            analysis —
             edge detection, motion difference, frame stacking and calibrated false-colour mapping —
             runs on the GPU shader pipeline in the native module (Phase 6). Modes marked{" "}
             <Text style={{ color: C.native }}>GPU</Text> are previews of that intent, not the final compute.
@@ -110,4 +136,7 @@ const styles = StyleSheet.create({
   cellName: { color: C.inkSoft, fontFamily: F.sans, fontSize: 14, fontWeight: "600" },
   note: { marginTop: 22, backgroundColor: C.surface, borderWidth: 1, borderColor: C.line, borderLeftWidth: 3, borderLeftColor: C.native, borderRadius: 8, padding: 16, gap: 8 },
   noteText: { color: C.inkMute, fontSize: 13, lineHeight: 19 },
+  viLabel: { color: C.inkMute, fontFamily: F.mono, fontSize: 11, letterSpacing: 1, textTransform: "uppercase", marginTop: 22, marginBottom: 10 },
+  analyzeBtn: { backgroundColor: C.red, borderRadius: 8, paddingVertical: 14, alignItems: "center" },
+  analyzeText: { color: "#fff", fontFamily: F.sansMed, fontWeight: "700", fontSize: 14 },
 });
