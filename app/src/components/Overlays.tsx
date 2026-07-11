@@ -45,24 +45,31 @@ export function Reticle() {
  */
 export function LevelIndicator() {
   const [roll, setRoll] = useState(0);
+  const rollRef = useRef(0);
+  const started = useRef(false);
   const anim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    Accelerometer.setUpdateInterval(80);
+    Accelerometer.setUpdateInterval(50);
     const sub = Accelerometer.addListener(({ x, y }) => {
-      const deg = Math.atan2(x, y) * (180 / Math.PI);
-      // portrait: 0deg upright. Normalize to -90..90 tilt.
-      let r = deg - 180;
-      if (r < -180) r += 360;
-      r = Math.max(-45, Math.min(45, r));
-      setRoll(r);
-      Animated.timing(anim, { toValue: r, duration: 80, easing: Easing.linear, useNativeDriver: true }).start();
+      // Roll of the horizon line. A level line is symmetric mod 180°, so fold
+      // to ±90 with 0 at upright — correct whichever way up the phone is.
+      let a = Math.atan2(x, y) * (180 / Math.PI);
+      if (a > 90) a -= 180;
+      else if (a < -90) a += 180;
+      // Low-pass filter to remove sensor jitter.
+      const prev = started.current ? rollRef.current : a;
+      const s = prev * 0.82 + a * 0.18;
+      started.current = true;
+      rollRef.current = s;
+      setRoll(s);
+      Animated.timing(anim, { toValue: s, duration: 50, easing: Easing.linear, useNativeDriver: true }).start();
     });
     return () => sub.remove();
   }, [anim]);
 
-  const level = Math.abs(roll) < 1.2;
-  const rotate = anim.interpolate({ inputRange: [-45, 45], outputRange: ["-45deg", "45deg"] });
+  const level = Math.abs(roll) < 0.9;
+  const rotate = anim.interpolate({ inputRange: [-90, 90], outputRange: ["-90deg", "90deg"], extrapolate: "clamp" });
 
   return (
     <View pointerEvents="none" style={[StyleSheet.absoluteFill, { alignItems: "center", justifyContent: "center" }]}>

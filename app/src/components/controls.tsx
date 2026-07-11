@@ -92,7 +92,8 @@ export function Stepper({
 
 /**
  * Custom slider — PanResponder-based so it needs no native dependency.
- * value is in [min,max]; reports continuously while dragging.
+ * Uses absolute window geometry (measureInWindow + gestureState) rather than
+ * per-view locationX, so touches over the thumb don't cause coordinate jumps.
  */
 export function Slider({
   value,
@@ -109,42 +110,48 @@ export function Slider({
   step?: number;
   width?: number;
 }) {
-  const [w, setW] = useState(width ?? 0);
-  const wRef = useRef(width ?? 0);
-  const onLayout = (e: LayoutChangeEvent) => {
-    const width2 = e.nativeEvent.layout.width;
-    wRef.current = width2;
-    setW(width2);
+  const ref = useRef<View>(null);
+  const geo = useRef({ x: 0, w: 0 });
+
+  const measure = () => {
+    ref.current?.measureInWindow((x, _y, w) => {
+      geo.current = { x, w };
+    });
   };
 
-  const clampToStep = (raw: number) => {
-    const v = Math.round(raw / step) * step;
-    return Math.max(min, Math.min(max, v));
+  const emit = (pageX: number) => {
+    const { x, w } = geo.current;
+    if (w <= 0) return;
+    let r = (pageX - x) / w;
+    r = Math.max(0, Math.min(1, r));
+    let v = min + r * (max - min);
+    v = Math.round(v / step) * step;
+    onChange(Math.max(min, Math.min(max, v)));
   };
 
   const pan = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: (e) => {
-        const x = e.nativeEvent.locationX;
-        if (wRef.current > 0) onChange(clampToStep(min + (x / wRef.current) * (max - min)));
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderGrant: (_e, g) => {
+        measure();
+        // measureInWindow is async; use a microtask so geo is fresh on first touch.
+        requestAnimationFrame(() => emit(g.x0));
       },
-      onPanResponderMove: (e) => {
-        const x = Math.max(0, Math.min(wRef.current, e.nativeEvent.locationX));
-        if (wRef.current > 0) onChange(clampToStep(min + (x / wRef.current) * (max - min)));
-      },
+      onPanResponderMove: (_e, g) => emit(g.moveX),
     })
   ).current;
 
+  const onLayout = (_e: LayoutChangeEvent) => measure();
   const pct = max > min ? ((value - min) / (max - min)) * 100 : 0;
 
   return (
-    <View style={[styles.sliderWrap, width ? { width } : null]} onLayout={onLayout} {...pan.panHandlers}>
-      <View style={styles.sliderTrack}>
+    <View ref={ref} style={[styles.sliderWrap, width ? { width } : null]} onLayout={onLayout} {...pan.panHandlers}>
+      <View pointerEvents="none" style={styles.sliderTrack}>
         <View style={[styles.sliderFill, { width: `${pct}%` }]} />
       </View>
-      <View style={[styles.sliderThumb, { left: `${pct}%`, marginLeft: -11 }]} />
+      <View pointerEvents="none" style={[styles.sliderThumb, { left: `${pct}%`, marginLeft: -11 }]} />
     </View>
   );
 }
