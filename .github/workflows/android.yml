@@ -1,6 +1,6 @@
 name: Build Android APK
 
-# Builds an installable, debug-signed release APK for Swiss Army Camera and
+# Builds an installable, debug-signed release APK for Lensii and
 # publishes it to a GitHub Release so there is always a stable download link.
 #
 # Trigger: pushes that touch the app, or run it manually from the Actions tab.
@@ -71,14 +71,14 @@ jobs:
       - name: Stage APK
         run: |
           mkdir -p ../dist
-          cp android/app/build/outputs/apk/release/app-release.apk ../dist/swiss-army-camera.apk
-          cp android/app/build/outputs/apk/release/app-release.apk "../dist/swiss-army-camera-v${{ steps.ver.outputs.version }}-${{ github.run_number }}.apk"
+          cp android/app/build/outputs/apk/release/app-release.apk ../dist/lensii.apk
+          cp android/app/build/outputs/apk/release/app-release.apk "../dist/lensii-v${{ steps.ver.outputs.version }}-${{ github.run_number }}.apk"
           ls -lh ../dist
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: swiss-army-camera-apk
+          name: lensii-apk
           path: dist/*.apk
           if-no-files-found: error
 
@@ -86,20 +86,20 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: android-latest
-          name: "Swiss Army Camera — Android (latest)"
+          name: "Lensii — Android (latest)"
           prerelease: true
           fail_on_unmatched_files: true
           body: |
-            **Swiss Army Camera** — latest Android build.
+            **Lensii** — latest Android build.
 
             - App version: `v${{ steps.ver.outputs.version }}`
             - Build: `#${{ github.run_number }}` · commit `${{ github.sha }}`
             - Debug-signed for **sideloading** (not a Play Store upload).
 
             ### Install on your Pixel 9 Pro
-            1. Download **`swiss-army-camera.apk`** below (open this page on the phone).
+            1. Download **`lensii.apk`** below (open this page on the phone).
             2. Tap the file → allow "install unknown apps" for your browser/files app if asked.
-            3. Open **Swiss Army Camera**, grant camera (and mic for video).
+            3. Open **Lensii**, grant camera (and mic for video).
 
             **Works today**
             - **Capture** — photo + video, flip, flash, torch, 0.5×–zoom, grid (thirds/golden/square), electronic level, reticle, self-timer
@@ -112,5 +112,5 @@ jobs:
 
             *Screen recording and manual ISO/shutter/RAW need native modules and are staged on the roadmap.*
           files: |
-            dist/swiss-army-camera.apk
-            dist/swiss-army-camera-v${{ steps.ver.outputs.version }}-${{ github.run_number }}.apk
+            dist/lensii.apk
+            dist/lensii-v${{ steps.ver.outputs.version }}-${{ github.run_number }}.apk

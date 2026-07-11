@@ -1,7 +1,7 @@
 import { Platform } from "react-native";
 
 /**
- * Swiss Army Camera — app design tokens.
+ * Lensii — app design tokens.
  * Mirrors the marketing site's system so app and web read as one instrument.
  */
 export const C = {

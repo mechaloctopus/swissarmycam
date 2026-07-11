@@ -1,6 +1,6 @@
-# Swiss Army Camera — Android app (Phase 2 shell)
+# Lensii — Android app (Phase 2 shell)
 
-The mobile app for [Swiss Army Camera](../). Built with **Expo + React Native**, this is the
+The mobile app for [Lensii](../). Built with **Expo + React Native**, this is the
 **Phase 2 app shell** from the roadmap on the marketing site: a working camera instrument with
 Capture, Timelapse, a Lab preview, and a local-first Library — plus honest, staged placeholders
 for the modules that need native code (Studio, Screen, Attachments).

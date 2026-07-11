@@ -28,12 +28,11 @@ Example swap for the nav mark:
 
 ```html
 <!-- was: <span class="brand__mark"> …inline svg… </span> -->
-<img class="brand__mark" src="assets/img/logo-mark.svg" alt="Swiss Army Camera" width="26" height="26" />
+<img class="brand__mark" src="assets/img/logo-mark.svg" alt="Lensii" width="26" height="26" />
 ```
 
-## Logo concept
-Swiss-Army-knife handle + camera lens + Swiss cross. The inline SVG placeholders approximate
-the **lens ring + red Swiss cross** so the layout reads correctly before final art exists.
+## Logo concept — Lensii
+Camera aperture iris + red cross, ringed by a precision instrument bezel. The wordmark is
+**LENSII**. "The Swiss Army knife of camera apps" is the product's descriptor, not its name.
 
-> Keep trademark strategy in mind: the cross and “Swiss Army” wording are placeholders pending
-> final legal/branding review.
+> The red cross is a decorative precision-instrument mark. Final trademark clearance is in progress.

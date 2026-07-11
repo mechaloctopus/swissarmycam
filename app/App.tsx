@@ -130,7 +130,7 @@ function PermissionGate({ onGrant, canAsk }: { onGrant: () => void; canAsk: bool
       <Mark size={72} />
       <Text style={styles.gateTitle}>Camera access</Text>
       <Text style={styles.gateText}>
-        Swiss Army Camera is a camera instrument — it needs the camera to show a viewfinder and
+        Lensii is a camera instrument — it needs the camera to show a viewfinder and
         capture. Nothing leaves your device unless you choose to share it.
       </Text>
       <Pressable onPress={onGrant} style={styles.gateBtn}>

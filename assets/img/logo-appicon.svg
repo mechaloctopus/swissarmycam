@@ -1,6 +1,6 @@
-<!-- Swiss Army Camera — app icon. Dark handle tile (Swiss-Army-knife red edge) + mark.
+<!-- Lensii — app icon. Dark handle tile (Swiss-Army-knife red edge) + mark.
      Self-contained fixed colours so it renders correctly as a store/app icon. -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="512" height="512" role="img" aria-label="Swiss Army Camera app icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="512" height="512" role="img" aria-label="Lensii app icon">
   <defs>
     <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#17181B"/>

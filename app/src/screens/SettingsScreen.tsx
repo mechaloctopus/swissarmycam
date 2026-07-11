@@ -70,8 +70,8 @@ export default function SettingsScreen({ focused }: { focused: boolean }) {
       <View style={styles.brand}>
         <Mark size={38} />
         <View>
-          <Text style={styles.name}>Swiss Army Camera</Text>
-          <Mono color={C.inkMute} size={11}>v{version} · Android · Phase 2 shell</Mono>
+          <Text style={styles.name}>Lensii</Text>
+          <Mono color={C.inkMute} size={11}>The Swiss Army knife of camera apps · v{version}</Mono>
         </View>
       </View>
 
@@ -198,8 +198,8 @@ export default function SettingsScreen({ focused }: { focused: boolean }) {
       </Pressable>
 
       <Text style={styles.legal}>
-        “Swiss Army Camera” is a working project name. Name, branding, and trademark strategy are
-        subject to final review, and are not affiliated with Victorinox or any armed forces.
+        “The Swiss Army knife of camera apps” is a descriptive phrase only. Lensii is an independent
+        product and is not affiliated with Victorinox or any armed forces. Final trademark clearance in progress.
       </Text>
     </ScrollView>
   );

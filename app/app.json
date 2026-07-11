@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "Swiss Army Camera",
-    "slug": "swiss-army-camera",
-    "version": "0.6.0",
+    "name": "Lensii",
+    "slug": "lensii",
+    "version": "0.7.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "scheme": "swissarmycamera",
+    "scheme": "lensii",
     "userInterfaceStyle": "dark",
     "backgroundColor": "#0B0B0C",
     "splash": {
@@ -18,14 +18,14 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.swissarmycamera.app",
       "infoPlist": {
-        "NSCameraUsageDescription": "Swiss Army Camera uses the camera to capture photos and timelapses.",
-        "NSMicrophoneUsageDescription": "Swiss Army Camera uses the microphone for video and commentary recording.",
-        "NSPhotoLibraryAddUsageDescription": "Swiss Army Camera saves your captures to your photo library when you choose to."
+        "NSCameraUsageDescription": "Lensii uses the camera to capture photos and timelapses.",
+        "NSMicrophoneUsageDescription": "Lensii uses the microphone for video and commentary recording.",
+        "NSPhotoLibraryAddUsageDescription": "Lensii saves your captures to your photo library when you choose to."
       }
     },
     "android": {
       "package": "com.swissarmycamera.app",
-      "versionCode": 8,
+      "versionCode": 9,
       "userInterfaceStyle": "dark",
       "adaptiveIcon": {
         "backgroundColor": "#0B0B0C",
@@ -40,15 +40,15 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Swiss Army Camera uses the camera to capture photos and timelapses.",
-          "microphonePermission": "Swiss Army Camera uses the microphone for video and commentary recording."
+          "cameraPermission": "Lensii uses the camera to capture photos and timelapses.",
+          "microphonePermission": "Lensii uses the microphone for video and commentary recording."
         }
       ],
       [
         "expo-media-library",
         {
-          "photosPermission": "Swiss Army Camera saves your captures to your photo library.",
-          "savePhotosPermission": "Swiss Army Camera saves your captures to your photo library.",
+          "photosPermission": "Lensii saves your captures to your photo library.",
+          "savePhotosPermission": "Lensii saves your captures to your photo library.",
           "isAccessMediaLocationEnabled": false
         }
       ]

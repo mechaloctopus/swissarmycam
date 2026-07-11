@@ -1,4 +1,4 @@
-# Swiss Army Camera — Website
+# Lensii — Website
 
 > **The camera app with every tool in the handle.**
 > A precision mobile camera, creator studio, screen recorder, compositor, and visual-intelligence platform.
@@ -21,7 +21,7 @@ The website itself doubles as three documents in one:
 3. A **market / investor overview** with an interactive revenue model.
 4. A **reference specification** for the future mobile-app build.
 
-> ⚠️ **Naming note:** *Swiss Army Camera* is a **working project name**.
+> ⚠️ **Naming note:** *Lensii* is a **working project name**.
 > Name, branding, and trademark strategy are **subject to final review**, and the project is
 > **not affiliated with, endorsed by, or connected to Victorinox or any national armed forces.**
 

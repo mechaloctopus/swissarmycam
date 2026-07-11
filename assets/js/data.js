@@ -1,5 +1,5 @@
 /*
- * Swiss Army Camera — content model
+ * Lensii — content model
  * ----------------------------------
  * All long-form product data lives here so the markup stays lean and the
  * "components" in main.js render from a single source of truth. Editing copy?
