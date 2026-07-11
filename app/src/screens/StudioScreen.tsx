@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { View, Text, StyleSheet, Pressable, PanResponder, ScrollView, Image, Modal, TextInput, LayoutChangeEvent } from "react-native";
+import { View, Text, StyleSheet, Pressable, PanResponder, ScrollView, Image, Modal, TextInput, LayoutChangeEvent, ActivityIndicator } from "react-native";
 import { captureRef } from "react-native-view-shot";
 import { C, F } from "../theme";
 import { Label, Mono } from "../components/ui";
@@ -7,12 +7,14 @@ import { Slider } from "../components/controls";
 import { listMedia, saveCapture } from "../store";
 import { saveToPhotos } from "../media";
 import { useSettings } from "../settings";
+import { chromaKeyImage, KEY_PRESETS } from "../chroma";
 
-type LayerType = "text" | "sticker";
+type LayerType = "text" | "sticker" | "image";
 type Layer = {
   id: string;
   type: LayerType;
   text: string;
+  uri?: string;
   color: string;
   x: number;
   y: number;
@@ -34,6 +36,12 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
   const [layers, setLayers] = useState<Layer[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [textModal, setTextModal] = useState<{ open: boolean; value: string; editing: string | null }>({ open: false, value: "", editing: null });
+  const [chromaModal, setChromaModal] = useState(false);
+  const [chromaSource, setChromaSource] = useState<string | null>(null);
+  const [chromaKey, setChromaKey] = useState<"green" | "blue">("green");
+  const [chromaThreshold, setChromaThreshold] = useState(35);
+  const [chromaSmoothing, setChromaSmoothing] = useState(15);
+  const [chromaBusy, setChromaBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
 
@@ -53,11 +61,11 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
   const sel = layers.find((l) => l.id === selected) || null;
   const patch = (id: string, p: Partial<Layer>) => setLayers((ls) => ls.map((l) => (l.id === id ? { ...l, ...p } : l)));
 
-  const addLayer = (type: LayerType, text: string) => {
+  const addLayer = (type: LayerType, text: string, uri?: string) => {
     const id = `L${++seq}`;
     setLayers((ls) => [
       ...ls,
-      { id, type, text, color: "#FFFFFF", x: canvas.w / 2 - 30, y: canvas.h / 2 - 20, scale: 1, rotation: 0, opacity: 100 },
+      { id, type, text, uri, color: "#FFFFFF", x: canvas.w / 2 - 60, y: canvas.h / 2 - 60, scale: 1, rotation: 0, opacity: 100 },
     ]);
     setSelected(id);
   };
@@ -71,6 +79,26 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
   const bringFront = () => {
     if (!sel) return;
     setLayers((ls) => [...ls.filter((l) => l.id !== sel.id), sel]);
+  };
+
+  const runChromaKey = async () => {
+    if (!chromaSource || chromaBusy) return;
+    setChromaBusy(true);
+    try {
+      const cutoutUri = await chromaKeyImage(chromaSource, {
+        keyColor: KEY_PRESETS[chromaKey],
+        threshold: chromaThreshold / 100,
+        smoothing: chromaSmoothing / 100,
+      });
+      addLayer("image", "Cutout", cutoutUri);
+      setChromaModal(false);
+      setChromaSource(null);
+      flash("Cutout added as a layer ✓");
+    } catch {
+      flash("Chroma key failed");
+    } finally {
+      setChromaBusy(false);
+    }
   };
 
   const doExport = async () => {
@@ -141,6 +169,11 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
           <Pressable onPress={() => setTextModal({ open: true, value: "", editing: null })} style={styles.addBtn}>
             <Text style={styles.addText}>+ Text</Text>
           </Pressable>
+          <Pressable onPress={() => setChromaModal(true)} disabled={recent.length === 0} style={[styles.addBtn, recent.length === 0 && { opacity: 0.4 }]}>
+            <Text style={styles.addText}>⌸ Chroma key</Text>
+          </Pressable>
+        </View>
+        <View style={[styles.addRow, { marginTop: 8 }]}>
           <Pressable onPress={bringFront} disabled={!sel} style={[styles.addBtn, !sel && { opacity: 0.4 }]}>
             <Text style={styles.addText}>Bring to front</Text>
           </Pressable>
@@ -187,11 +220,12 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
         </Pressable>
 
         <View style={styles.note}>
-          <Mono color={C.native} size={10}>REQUIRES NATIVE CODE</Mono>
+          <Mono color={C.go} size={10}>ON-DEVICE GPU</Mono>
           <Text style={styles.noteText}>
-            This is the layer compositor in basic form — base image, text and sticker layers, drag,
-            scale, rotate, opacity, flatten &amp; export. GPU chroma key (green screen), a video
-            timeline and keyframes arrive with the native module — Phase 4+.
+            Chroma key runs as a real SkSL shader on-device (Skia) — pick a photo shot against
+            green or blue, cut the background, and the transparent cutout becomes a draggable
+            layer over any other base. Video timeline &amp; keyframed animation are the deeper
+            native phase.
           </Text>
         </View>
       </ScrollView>
@@ -222,6 +256,47 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
                 style={[styles.modalBtn, { backgroundColor: C.red, borderColor: C.red }]}
               >
                 <Text style={[styles.modalBtnText, { color: "#fff" }]}>{textModal.editing ? "Save" : "Add"}</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={chromaModal} transparent animationType="fade" onRequestClose={() => setChromaModal(false)}>
+        <View style={styles.modalWrap}>
+          <View style={styles.modalCard}>
+            <Label>Chroma key cutout</Label>
+            <Mono color={C.inkMute} size={11} style={{ marginTop: 6 }}>Pick a photo shot against a solid green or blue backdrop.</Mono>
+
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, marginTop: 14 }}>
+              {recent.map((u) => (
+                <Pressable key={u} onPress={() => setChromaSource(u)} style={[styles.baseCell, chromaSource === u && styles.baseCellOn]}>
+                  <Image source={{ uri: u }} style={styles.baseThumb} />
+                </Pressable>
+              ))}
+            </ScrollView>
+
+            <View style={{ flexDirection: "row", gap: 8, marginTop: 16 }}>
+              {(["green", "blue"] as const).map((k) => (
+                <Pressable key={k} onPress={() => setChromaKey(k)} style={[styles.keyChip, chromaKey === k && styles.keyChipOn, { backgroundColor: k === "green" ? "#1c5c33" : "#1c3a5c" }]}>
+                  <Text style={styles.keyChipText}>{k === "green" ? "Green screen" : "Blue screen"}</Text>
+                </Pressable>
+              ))}
+            </View>
+
+            <CtrlRow label="Threshold"><Slider value={chromaThreshold} min={5} max={80} step={1} onChange={setChromaThreshold} width={150} /></CtrlRow>
+            <CtrlRow label="Edge smoothing"><Slider value={chromaSmoothing} min={2} max={50} step={1} onChange={setChromaSmoothing} width={150} /></CtrlRow>
+
+            <View style={styles.modalBtns}>
+              <Pressable onPress={() => setChromaModal(false)} style={styles.modalBtn}>
+                <Text style={styles.modalBtnText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                onPress={runChromaKey}
+                disabled={!chromaSource || chromaBusy}
+                style={[styles.modalBtn, { backgroundColor: C.red, borderColor: C.red }, (!chromaSource || chromaBusy) && { opacity: 0.5 }]}
+              >
+                {chromaBusy ? <ActivityIndicator color="#fff" /> : <Text style={[styles.modalBtnText, { color: "#fff" }]}>Cut out</Text>}
               </Pressable>
             </View>
           </View>
@@ -268,6 +343,8 @@ function DraggableLayer({ layer, selected, onSelect, onMove }: { layer: Layer; s
       <View style={selected ? styles.layerSelected : undefined}>
         {layer.type === "text" ? (
           <Text style={{ color: layer.color, fontSize: 26, fontWeight: "800", fontFamily: F.sansMed }}>{layer.text}</Text>
+        ) : layer.type === "image" ? (
+          <Image source={{ uri: layer.uri }} style={{ width: 120, height: 120 }} resizeMode="contain" />
         ) : (
           <Text style={{ fontSize: 40 }}>{layer.text}</Text>
         )}
@@ -309,9 +386,12 @@ const styles = StyleSheet.create({
   swatches: { flexDirection: "row", gap: 8, marginTop: 10 },
   swatch: { width: 26, height: 26, borderRadius: 13, borderWidth: 2, borderColor: "transparent" },
   swatchOn: { borderColor: C.ink },
+  keyChip: { flex: 1, borderRadius: 8, borderWidth: 1, borderColor: "transparent", paddingVertical: 12, alignItems: "center" },
+  keyChipOn: { borderColor: C.red },
+  keyChipText: { color: "#fff", fontFamily: F.sansMed, fontWeight: "600", fontSize: 13 },
   export: { marginTop: 20, backgroundColor: C.red, borderRadius: 8, paddingVertical: 16, alignItems: "center" },
   exportText: { color: "#fff", fontFamily: F.sansMed, fontWeight: "700", fontSize: 15 },
-  note: { marginTop: 22, backgroundColor: C.surface, borderWidth: 1, borderColor: C.line, borderLeftWidth: 3, borderLeftColor: C.native, borderRadius: 8, padding: 16, gap: 8 },
+  note: { marginTop: 22, backgroundColor: C.surface, borderWidth: 1, borderColor: C.line, borderLeftWidth: 3, borderLeftColor: C.go, borderRadius: 8, padding: 16, gap: 8 },
   noteText: { color: C.inkMute, fontSize: 13, lineHeight: 19 },
   modalWrap: { flex: 1, backgroundColor: "rgba(0,0,0,0.7)", alignItems: "center", justifyContent: "center", padding: 24 },
   modalCard: { width: "100%", backgroundColor: C.surface, borderWidth: 1, borderColor: C.lineStrong, borderRadius: 12, padding: 20 },

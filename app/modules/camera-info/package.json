@@ -1,0 +1,7 @@
+{
+  "name": "camera-info",
+  "version": "1.0.0",
+  "description": "Local Expo module: read-only Camera2 sensor characteristics (Lensii).",
+  "main": "index.ts",
+  "private": true
+}

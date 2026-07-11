@@ -8,6 +8,12 @@ for the modules that need native code (Studio, Screen, Attachments).
 Designed for **Android first** (targeting a Pixel 9 Pro), the code is structured so a
 near-identical **iOS** build slots in later with iOS-specific camera work (AVFoundation).
 
+**iOS status:** [`.github/workflows/ios.yml`](../.github/workflows/ios.yml) builds the same
+codebase for the **iOS Simulator** on every push (a build-correctness smoke test — the same
+screens, same TypeScript, same design system). It is *not* a device-installable artifact: a real
+iPhone install requires an Apple Developer Program account and provisioning that only the project
+owner can supply. Once available, this workflow becomes the base for a signed TestFlight/ad-hoc build.
+
 ## Get the APK (no build required)
 
 Every push to the app publishes an installable APK to the repo's
@@ -22,8 +28,8 @@ Download `lensii.apk` on your phone and open it (allow "install unknown apps" if
 | **Timelapse** | ✅ Works | Intervalometer (1–60 s), live frame counter, frames saved as a set and **played back** in Library. Frame→MP4 stitching is Phase 3 (native). |
 | **Lab** | ✅ Works | Live viewfinder with real overlay guides + look tints, **plus on-device visual intelligence**: colour-palette analysis, **OCR text extraction**, and **scene/object labeling** (all MLKit/react-native-image-colors, offline) from a captured frame. Deeper GPU pixel analysis (edge/motion/stacking) is Phase 6. |
 | **Library** | ✅ Works | Local-first grid of **photos + videos**, fullscreen photo viewer, **photo editor** (rotate / flip / crop 1:1 → saves a non-destructive copy, via expo-image-manipulator), **video player**, **timelapse playback** (8/12/24 fps), **share**, save-to-Photos, delete. |
-| **Studio** | ✅ Works (basic) | Layer **compositor**: pick a base photo, add **text** + **sticker** layers, drag / scale / rotate / opacity, bring-to-front, then **flatten & export** to Library (react-native-view-shot). GPU chroma key + video timeline are the deeper native phase. |
-| **Attachments** | ✅ Works | **Device & module inspector**: model / OS / memory (expo-device), detected camera resolutions, live **sensor scan** (accelerometer / gyro / magnetometer / barometer), and an honest "no external modules detected". USB-C thermal/IR/UV & BLE shutters plug in via the native module (Phase 7). |
+| **Studio** | ✅ Works | Layer **compositor**: pick a base photo, add **text** + **sticker** layers, and cut out a **real GPU chroma key** (green/blue screen → transparent PNG, an SkSL shader run on-device via react-native-skia) as a draggable layer over a different base. Drag / scale / rotate / opacity, bring-to-front, **flatten & export** to Library. A video timeline + keyframes are the deeper native phase. |
+| **Attachments** | ✅ Works | **Device & module inspector**: model / OS / memory (expo-device), detected camera resolutions, **real Camera2 sensor characteristics** per lens (focal lengths, apertures, ISO range, exposure range, sensor size — read-only, via a small local native module), live **sensor scan** (accelerometer / gyro / magnetometer / barometer), and an honest "no external modules detected". USB-C thermal/IR/UV & BLE shutters plug in via the native module (Phase 7). |
 | **Settings** | ✅ Works | Full **customization hub** — see below — plus honest capability map, privacy, storage usage, reset. |
 | **Screen** | 🔧 Staged | Honest "requires native module" screen (MediaProjection) matching the site's roadmap. |
 

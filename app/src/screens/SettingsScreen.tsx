@@ -16,9 +16,11 @@ const CAPS: { name: string; level: string; tone: string }[] = [
   { name: "Interval timelapse (frames)", level: "Possible now", tone: C.go },
   { name: "Colour palette · OCR · scene labeling (on-device)", level: "Possible now", tone: C.go },
   { name: "Layer compositor + photo editor", level: "Possible now", tone: C.go },
-  { name: "Manual ISO / shutter / RAW", level: "Requires native code", tone: C.native },
+  { name: "GPU chroma key (green/blue screen)", level: "Possible now", tone: C.go },
+  { name: "Camera2 sensor characteristics (read-only)", level: "Possible now", tone: C.go },
+  { name: "Manual ISO / shutter / RAW capture", level: "Requires native code", tone: C.native },
   { name: "Input mic-gain / audio DSP", level: "Requires native code", tone: C.native },
-  { name: "Green-screen chroma key · screen recording", level: "Requires native code", tone: C.native },
+  { name: "Screen recording", level: "Requires native code", tone: C.native },
   { name: "IR / thermal / UV", level: "Requires attachment", tone: C.attach },
 ];
 

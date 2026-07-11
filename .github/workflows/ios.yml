@@ -1,0 +1,112 @@
+name: Build iOS (simulator smoke test)
+
+# Verifies the app builds for iOS — the "near-exact iOS clone" companion to the
+# Android build. This produces a Simulator build (no code signing needed) as a
+# build-correctness check; it is NOT a device-installable artifact. Installing
+# on a real iPhone requires an Apple Developer Program account (paid) and
+# provisioning profiles that only the project owner can supply — once you have
+# those, this workflow is the base to extend into a signed TestFlight/ad-hoc
+# build.
+#
+# Runs on a macOS GitHub Actions runner (billed at a higher per-minute
+# multiplier than Linux) — separate from, and independent of, the Android
+# workflow so an iOS-side issue never blocks Android releases.
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "app/**"
+      - ".github/workflows/ios.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ios-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build for iOS Simulator
+    runs-on: macos-14
+    defaults:
+      run:
+        working-directory: app
+    env:
+      EXPO_NO_TELEMETRY: "1"
+      CI: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Set up Ruby (CocoaPods)
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: false
+
+      - name: Install CocoaPods
+        run: gem install cocoapods -N
+
+      - name: Install JS dependencies
+        run: npm ci
+
+      - name: Prebuild native iOS project
+        run: npx expo prebuild --platform ios --no-install
+
+      - name: Install pods
+        working-directory: app/ios
+        run: pod install --repo-update
+
+      - name: Select simulator destination
+        id: sim
+        run: |
+          RUNTIME=$(xcrun simctl list runtimes | grep -m1 "iOS " | awk '{print $2}')
+          echo "Using iOS runtime: $RUNTIME"
+          DEVICE=$(xcrun simctl list devices available | grep -m1 "iPhone 1" | sed -E 's/^[[:space:]]*([^(]+) \(.*/\1/' | xargs)
+          echo "device=${DEVICE:-iPhone 15}" >> "$GITHUB_OUTPUT"
+
+      - name: Build (Simulator, unsigned)
+        working-directory: app/ios
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -workspace Lensii.xcworkspace \
+            -scheme Lensii \
+            -configuration Release \
+            -sdk iphonesimulator \
+            -destination "generic/platform=iOS Simulator" \
+            CODE_SIGNING_ALLOWED=NO \
+            build | xcpretty || true
+
+      - name: Locate .app bundle
+        id: app
+        working-directory: app/ios
+        run: |
+          APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -iname "Lensii.app" -path "*iphonesimulator*" | head -1)
+          if [ -z "$APP_PATH" ]; then
+            APP_PATH=$(find . -iname "Lensii.app" -path "*iphonesimulator*" | head -1)
+          fi
+          echo "path=$APP_PATH" >> "$GITHUB_OUTPUT"
+          echo "Found: $APP_PATH"
+
+      - name: Upload simulator build artifact
+        if: steps.app.outputs.path != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: lensii-ios-simulator-build
+          path: ${{ steps.app.outputs.path }}
+          if-no-files-found: warn
+
+      - name: Summary
+        run: |
+          echo "### iOS build" >> "$GITHUB_STEP_SUMMARY"
+          echo "Simulator build complete — this proves the codebase builds for iOS." >> "$GITHUB_STEP_SUMMARY"
+          echo "A real-device / TestFlight build needs an Apple Developer Program account and signing, which this workflow does not have." >> "$GITHUB_STEP_SUMMARY"

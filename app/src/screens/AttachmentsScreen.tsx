@@ -5,12 +5,14 @@ import { Accelerometer, Gyroscope, Magnetometer, Barometer } from "expo-sensors"
 import { C, F } from "../theme";
 import { Label, Mono, StatusPill } from "../components/ui";
 import { loadPictureSizes, sortSizes } from "../caps";
+import { getLensInfo, LensInfo } from "camera-info";
 
 type Row = { k: string; v: string };
 
 export default function AttachmentsScreen({ focused }: { focused: boolean }) {
   const [device, setDevice] = useState<Row[]>([]);
   const [camera, setCamera] = useState<Row[]>([]);
+  const [lenses, setLenses] = useState<LensInfo[]>([]);
   const [sensors, setSensors] = useState<{ name: string; ok: boolean }[]>([]);
   const [scanning, setScanning] = useState(false);
 
@@ -30,8 +32,9 @@ export default function AttachmentsScreen({ focused }: { focused: boolean }) {
     setCamera([
       { k: "Max photo", v: sizes[0] ? sizes[0] + " (" + megapixels(sizes[0]) + ")" : "open Capture to detect" },
       { k: "Detected sizes", v: sizes.length ? String(sizes.length) : "—" },
-      { k: "Lens selection", v: "iOS native / Android via native module" },
     ]);
+
+    setLenses(getLensInfo());
 
     const checks: [string, () => Promise<boolean>][] = [
       ["Accelerometer", () => Accelerometer.isAvailableAsync()],
@@ -77,6 +80,29 @@ export default function AttachmentsScreen({ focused }: { focused: boolean }) {
         ))}
       </Section>
 
+      {lenses.length > 0 && (
+        <View style={{ marginTop: 22 }}>
+          <Text style={styles.section}>Lens characteristics · Camera2</Text>
+          {lenses.map((l) => (
+            <View key={l.id} style={[styles.card, { marginBottom: 10 }]}>
+              <View style={styles.lensHead}>
+                <Mono color={C.ink} size={12}>{l.facing.toUpperCase()} · #{l.id}</Mono>
+                <Mono color={C.inkMute} size={10}>{l.hardwareLevel}</Mono>
+              </View>
+              <KV k="Focal lengths" v={l.focalLengthsMm.length ? l.focalLengthsMm.map((f) => `${f.toFixed(1)}mm`).join(" · ") : "—"} />
+              <KV k="Apertures" v={l.apertures.length ? l.apertures.map((a) => `f/${a.toFixed(1)}`).join(" · ") : "—"} />
+              <KV k="ISO range" v={l.isoRange ? `${l.isoRange[0]}–${l.isoRange[1]}` : "—"} />
+              <KV k="Exposure range" v={l.exposureTimeRangeNs ? `${nsToShutter(l.exposureTimeRangeNs[0])}–${nsToShutter(l.exposureTimeRangeNs[1])}` : "—"} />
+              <KV k="Sensor size" v={l.physicalSizeMm ? `${l.physicalSizeMm.width.toFixed(1)} × ${l.physicalSizeMm.height.toFixed(1)}mm` : "—"} />
+              <KV k="Flash" v={l.hasFlash ? "Yes" : "No"} />
+            </View>
+          ))}
+          <Mono color={C.inkMute} size={10} style={{ paddingHorizontal: 2, marginTop: 2 }}>
+            Real Camera2 hardware data — read-only for now. Live manual capture using these ranges is Phase 3.
+          </Mono>
+        </View>
+      )}
+
       <Section title="Onboard sensors">
         {sensors.map((s) => (
           <View key={s.name} style={styles.sensorRow}>
@@ -117,6 +143,14 @@ function megapixels(size: string): string {
   return `${((w * h) / 1_000_000).toFixed(1)} MP`;
 }
 
+/** Nanoseconds -> a photographer-readable shutter fraction, e.g. 8_333_333ns -> "1/120". */
+function nsToShutter(ns: number): string {
+  const seconds = ns / 1e9;
+  if (seconds >= 1) return `${seconds.toFixed(1)}s`;
+  const denom = Math.round(1 / seconds);
+  return `1/${denom}`;
+}
+
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <View style={{ marginTop: 22 }}>
@@ -145,6 +179,7 @@ const styles = StyleSheet.create({
   kv: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 13, paddingHorizontal: 14, borderBottomWidth: 1, borderBottomColor: C.lineSoft, gap: 12 },
   kvK: { color: C.inkMute, fontSize: 13.5, flex: 1 },
   kvV: { color: C.inkSoft, fontFamily: F.mono, fontSize: 12.5, textAlign: "right", flexShrink: 1 },
+  lensHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 12, paddingHorizontal: 14, borderBottomWidth: 1, borderBottomColor: C.lineSoft, backgroundColor: C.surface2 },
   sensorRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 13, paddingHorizontal: 14, borderBottomWidth: 1, borderBottomColor: C.lineSoft },
   led: { width: 9, height: 9, borderRadius: 5 },
   none: { color: C.inkSoft, fontFamily: F.sansMed, fontSize: 15, fontWeight: "600" },
