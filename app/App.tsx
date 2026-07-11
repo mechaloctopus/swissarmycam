@@ -12,6 +12,7 @@ import StudioScreen from "./src/screens/StudioScreen";
 import TimelapseScreen from "./src/screens/TimelapseScreen";
 import LabScreen from "./src/screens/LabScreen";
 import LibraryScreen from "./src/screens/LibraryScreen";
+import AttachmentsScreen from "./src/screens/AttachmentsScreen";
 import SettingsScreen from "./src/screens/SettingsScreen";
 import ComingSoonScreen, { ComingSoon } from "./src/screens/ComingSoonScreen";
 
@@ -50,6 +51,7 @@ function Screen({ tabKey, focused }: { tabKey: string; focused: boolean }) {
     case "studio": return <StudioScreen focused={focused} />;
     case "timelapse": return <TimelapseScreen focused={focused} />;
     case "lab": return <LabScreen focused={focused} />;
+    case "attach": return <AttachmentsScreen focused={focused} />;
     case "library": return <LibraryScreen focused={focused} />;
     case "settings": return <SettingsScreen focused={focused} />;
     default: return <ComingSoonScreen data={SOON[tabKey]} />;

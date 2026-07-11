@@ -21,10 +21,11 @@ Download `swiss-army-camera.apk` on your phone and open it (allow "install unkno
 | **Capture** | ✅ Works | **Photo + video** modes. Front/rear flip, flash (off/auto/on), **torch**, **continuous zoom slider**, rule-of-thirds / golden / square grid, electronic level (accelerometer), reticle, self-timer. Video honors the mic + resolution settings. Saves in-app + optional auto-save to Photos. |
 | **Timelapse** | ✅ Works | Intervalometer (1–60 s), live frame counter, frames saved as a set and **played back** in Library. Frame→MP4 stitching is Phase 3 (native). |
 | **Lab** | ✅ Works | Live viewfinder with real overlay guides + look tints. On-sensor GPU pixel analysis is Phase 6 (clearly marked). |
-| **Library** | ✅ Works | Local-first grid of **photos + videos**, fullscreen photo viewer, **video player**, **timelapse playback** (8/12/24 fps), **share**, save-to-Photos, delete. |
+| **Library** | ✅ Works | Local-first grid of **photos + videos**, fullscreen photo viewer, **photo editor** (rotate / flip / crop 1:1 → saves a non-destructive copy, via expo-image-manipulator), **video player**, **timelapse playback** (8/12/24 fps), **share**, save-to-Photos, delete. |
 | **Studio** | ✅ Works (basic) | Layer **compositor**: pick a base photo, add **text** + **sticker** layers, drag / scale / rotate / opacity, bring-to-front, then **flatten & export** to Library (react-native-view-shot). GPU chroma key + video timeline are the deeper native phase. |
+| **Attachments** | ✅ Works | **Device & module inspector**: model / OS / memory (expo-device), detected camera resolutions, live **sensor scan** (accelerometer / gyro / magnetometer / barometer), and an honest "no external modules detected". USB-C thermal/IR/UV & BLE shutters plug in via the native module (Phase 7). |
 | **Settings** | ✅ Works | Full **customization hub** — see below — plus honest capability map, privacy, storage usage, reset. |
-| **Screen / Attachments** | 🔧 Staged | Honest "requires native module" screens matching the site's roadmap. |
+| **Screen** | 🔧 Staged | Honest "requires native module" screen (MediaProjection) matching the site's roadmap. |
 
 ### Everything is customizable (Settings — persisted across launches)
 - **Photo:** aspect ratio (4:3 / 16:9 / 1:1), **picture size** (real device-detected resolutions), JPEG quality.

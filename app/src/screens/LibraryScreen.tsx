@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { View, Text, StyleSheet, FlatList, Pressable, Dimensions, Modal, Alert } from "react-native";
+import { View, Text, StyleSheet, FlatList, Pressable, Dimensions, Modal, Alert, Image as RNImage } from "react-native";
 import { Image } from "expo-image";
 import { useVideoPlayer, VideoView } from "expo-video";
+import { manipulateAsync, FlipType, SaveFormat } from "expo-image-manipulator";
 import { C, F } from "../theme";
 import { Label, Mono } from "../components/ui";
-import { listMedia, deleteMedia, listTimelapseSessions, deleteTimelapseSession, MediaItem, TLSession } from "../store";
+import { listMedia, deleteMedia, saveCapture, listTimelapseSessions, deleteTimelapseSession, MediaItem, TLSession } from "../store";
 import { saveToPhotos, shareFile } from "../media";
 
 const COLS = 3;
@@ -20,6 +21,7 @@ export default function LibraryScreen({ focused }: { focused: boolean }) {
   const [media, setMedia] = useState<MediaItem[]>([]);
   const [sessions, setSessions] = useState<TLSession[]>([]);
   const [viewer, setViewer] = useState<Viewer>(null);
+  const [editUri, setEditUri] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const width = Dimensions.get("window").width;
   const cell = (width - GAP * (COLS - 1)) / COLS;
@@ -111,6 +113,11 @@ export default function LibraryScreen({ focused }: { focused: boolean }) {
             <Pressable onPress={() => setViewer(null)} style={styles.vBtn}>
               <Text style={styles.vBtnText}>✕ Close</Text>
             </Pressable>
+            {viewer?.type === "photo" && (
+              <Pressable onPress={() => setEditUri(viewer.uri)} style={styles.vBtn}>
+                <Text style={styles.vBtnText}>✎ Edit</Text>
+              </Pressable>
+            )}
             {viewer?.type !== "tl" && (
               <>
                 <Pressable onPress={async () => currentUri && flash((await shareFile(currentUri)) ? "Shared" : "Share unavailable")} style={styles.vBtn}>
@@ -128,12 +135,109 @@ export default function LibraryScreen({ focused }: { focused: boolean }) {
         </View>
       </Modal>
 
+      <Modal visible={!!editUri} transparent animationType="slide" onRequestClose={() => setEditUri(null)}>
+        {editUri && (
+          <ImageEditor
+            uri={editUri}
+            onClose={() => setEditUri(null)}
+            onSaved={() => {
+              setEditUri(null);
+              setViewer(null);
+              flash("Edited copy saved");
+              load();
+            }}
+          />
+        )}
+      </Modal>
+
       {toast && (
         <View pointerEvents="none" style={styles.toast}>
           <Mono color={C.ink} size={12}>{toast}</Mono>
         </View>
       )}
     </View>
+  );
+}
+
+/** Non-destructive photo editor: rotate / flip / crop → saves a new copy. */
+function ImageEditor({ uri, onClose, onSaved }: { uri: string; onClose: () => void; onSaved: () => void }) {
+  const [work, setWork] = useState(uri);
+  const [busy, setBusy] = useState(false);
+
+  const run = async (fn: () => Promise<string>) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      setWork(await fn());
+    } catch {
+      // keep current
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const rotate = (deg: number) => run(async () => (await manipulateAsync(work, [{ rotate: deg }], { compress: 0.95, format: SaveFormat.JPEG })).uri);
+  const flip = (t: FlipType) => run(async () => (await manipulateAsync(work, [{ flip: t }], { compress: 0.95, format: SaveFormat.JPEG })).uri);
+  const cropSquare = () =>
+    run(
+      () =>
+        new Promise<string>((resolve, reject) => {
+          RNImage.getSize(
+            work,
+            async (w, h) => {
+              try {
+                const s = Math.min(w, h);
+                const res = await manipulateAsync(work, [{ crop: { originX: (w - s) / 2, originY: (h - s) / 2, width: s, height: s } }], { compress: 0.95, format: SaveFormat.JPEG });
+                resolve(res.uri);
+              } catch (e) {
+                reject(e);
+              }
+            },
+            reject
+          );
+        })
+    );
+
+  const save = async () => {
+    setBusy(true);
+    try {
+      await saveCapture(work);
+      onSaved();
+    } catch {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <View style={styles.editor}>
+      <View style={styles.editorCanvas}>
+        <Image source={{ uri: work }} style={StyleSheet.absoluteFill} contentFit="contain" transition={80} />
+      </View>
+      <View style={styles.editorTools}>
+        <EBtn label="⟲ 90°" onPress={() => rotate(-90)} />
+        <EBtn label="⟳ 90°" onPress={() => rotate(90)} />
+        <EBtn label="⇋ Flip H" onPress={() => flip(FlipType.Horizontal)} />
+        <EBtn label="⇅ Flip V" onPress={() => flip(FlipType.Vertical)} />
+        <EBtn label="⃞ Crop 1:1" onPress={cropSquare} />
+        <EBtn label="↺ Reset" onPress={() => setWork(uri)} />
+      </View>
+      <View style={styles.editorBar}>
+        <Pressable onPress={onClose} style={styles.vBtn}>
+          <Text style={styles.vBtnText}>✕ Cancel</Text>
+        </Pressable>
+        <Pressable onPress={save} disabled={busy} style={[styles.vBtn, { borderColor: C.red, backgroundColor: busy ? C.surface : "rgba(224,35,28,0.15)" }]}>
+          <Text style={[styles.vBtnText, { color: C.red }]}>{busy ? "Saving…" : "✓ Save copy"}</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+function EBtn({ label, onPress }: { label: string; onPress: () => void }) {
+  return (
+    <Pressable onPress={onPress} style={styles.eBtn}>
+      <Text style={styles.eBtnText}>{label}</Text>
+    </Pressable>
   );
 }
 
@@ -201,4 +305,10 @@ const styles = StyleSheet.create({
   tlCtrls: { position: "absolute", bottom: 90, left: 0, right: 0, flexDirection: "row", justifyContent: "center", gap: 8 },
   tlBtn: { borderWidth: 1, borderColor: C.lineStrong, backgroundColor: "rgba(20,21,24,0.9)", paddingHorizontal: 12, paddingVertical: 9, borderRadius: 8 },
   toast: { position: "absolute", bottom: 100, alignSelf: "center", backgroundColor: "rgba(0,0,0,0.8)", paddingHorizontal: 14, paddingVertical: 8, borderRadius: 40, borderWidth: 1, borderColor: C.line },
+  editor: { flex: 1, backgroundColor: C.bg, justifyContent: "center", padding: 16, gap: 16 },
+  editorCanvas: { flex: 1, borderRadius: 10, overflow: "hidden", borderWidth: 1, borderColor: C.line, backgroundColor: "#000" },
+  editorTools: { flexDirection: "row", flexWrap: "wrap", gap: 8, justifyContent: "center" },
+  eBtn: { borderWidth: 1, borderColor: C.lineStrong, backgroundColor: C.surface, paddingHorizontal: 14, paddingVertical: 11, borderRadius: 8 },
+  eBtnText: { color: C.inkSoft, fontFamily: F.mono, fontSize: 12.5 },
+  editorBar: { flexDirection: "row", gap: 10, justifyContent: "center" },
 });
