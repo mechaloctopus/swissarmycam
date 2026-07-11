@@ -22,8 +22,9 @@ Download `swiss-army-camera.apk` on your phone and open it (allow "install unkno
 | **Timelapse** | ✅ Works | Intervalometer (1–60 s), live frame counter, frames saved as a set and **played back** in Library. Frame→MP4 stitching is Phase 3 (native). |
 | **Lab** | ✅ Works | Live viewfinder with real overlay guides + look tints. On-sensor GPU pixel analysis is Phase 6 (clearly marked). |
 | **Library** | ✅ Works | Local-first grid of **photos + videos**, fullscreen photo viewer, **video player**, **timelapse playback** (8/12/24 fps), **share**, save-to-Photos, delete. |
+| **Studio** | ✅ Works (basic) | Layer **compositor**: pick a base photo, add **text** + **sticker** layers, drag / scale / rotate / opacity, bring-to-front, then **flatten & export** to Library (react-native-view-shot). GPU chroma key + video timeline are the deeper native phase. |
 | **Settings** | ✅ Works | Full **customization hub** — see below — plus honest capability map, privacy, storage usage, reset. |
-| **Studio / Screen / Attachments** | 🔧 Staged | Honest "requires native module" screens matching the site's roadmap. |
+| **Screen / Attachments** | 🔧 Staged | Honest "requires native module" screens matching the site's roadmap. |
 
 ### Everything is customizable (Settings — persisted across launches)
 - **Photo:** aspect ratio (4:3 / 16:9 / 1:1), **picture size** (real device-detected resolutions), JPEG quality.

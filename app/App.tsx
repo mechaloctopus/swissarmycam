@@ -8,6 +8,7 @@ import { C, F } from "./src/theme";
 import { Mark } from "./src/components/Mark";
 import { Mono } from "./src/components/ui";
 import CaptureScreen from "./src/screens/CaptureScreen";
+import StudioScreen from "./src/screens/StudioScreen";
 import TimelapseScreen from "./src/screens/TimelapseScreen";
 import LabScreen from "./src/screens/LabScreen";
 import LibraryScreen from "./src/screens/LibraryScreen";
@@ -29,12 +30,6 @@ const TABS: Tab[] = [
 ];
 
 const SOON: Record<string, ComingSoon> = {
-  studio: {
-    glyph: "▤", title: "Studio", phase: "Compositor · Phase 4",
-    levelLabel: "Requires native code", tone: C.native,
-    blurb: "A layer-based compositor: timeline, keyframes, green-screen chroma key and overlays — a desktop-class studio, phone-sized.",
-    planned: ["Timeline & layers", "Green-screen chroma key", "AI background removal", "Keyframed objects & motion paths", "Lower thirds & text layers", "Platform export presets"],
-  },
   screen: {
     glyph: "▣", title: "Screen", phase: "Screen studio · Phase 5",
     levelLabel: "Requires native code", tone: C.native,
@@ -52,6 +47,7 @@ const SOON: Record<string, ComingSoon> = {
 function Screen({ tabKey, focused }: { tabKey: string; focused: boolean }) {
   switch (tabKey) {
     case "capture": return <CaptureScreen focused={focused} />;
+    case "studio": return <StudioScreen focused={focused} />;
     case "timelapse": return <TimelapseScreen focused={focused} />;
     case "lab": return <LabScreen focused={focused} />;
     case "library": return <LibraryScreen focused={focused} />;
