@@ -5,8 +5,8 @@ import { useVideoPlayer, VideoView } from "expo-video";
 import { manipulateAsync, FlipType, SaveFormat } from "expo-image-manipulator";
 import { C, F } from "../theme";
 import { Label, Mono } from "../components/ui";
-import { PalettePanel } from "../components/PalettePanel";
-import { extractPalette, Swatch } from "../analyze";
+import { PalettePanel, TextResult } from "../components/PalettePanel";
+import { extractPalette, extractText, Swatch, TextScan } from "../analyze";
 import { listMedia, deleteMedia, saveCapture, listTimelapseSessions, deleteTimelapseSession, MediaItem, TLSession } from "../store";
 import { saveToPhotos, shareFile } from "../media";
 
@@ -26,11 +26,15 @@ export default function LibraryScreen({ focused }: { focused: boolean }) {
   const [editUri, setEditUri] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<Swatch[]>([]);
   const [analyzing, setAnalyzing] = useState(false);
+  const [ocr, setOcr] = useState<TextScan | null>(null);
+  const [reading, setReading] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
     setAnalysis([]);
     setAnalyzing(false);
+    setOcr(null);
+    setReading(false);
   }, [viewer]);
   const width = Dimensions.get("window").width;
   const cell = (width - GAP * (COLS - 1)) / COLS;
@@ -118,9 +122,10 @@ export default function LibraryScreen({ focused }: { focused: boolean }) {
           {viewer?.type === "video" && <VideoViewer uri={viewer.uri} />}
           {viewer?.type === "tl" && <TLPlayer frames={viewer.session.frames} />}
 
-          {viewer?.type === "photo" && (analyzing || analysis.length > 0) && (
+          {viewer?.type === "photo" && (analyzing || analysis.length > 0 || reading || ocr) && (
             <View style={styles.analysisWrap}>
               <PalettePanel swatches={analysis} loading={analyzing} />
+              <TextResult scan={ocr} loading={reading} />
             </View>
           )}
 
@@ -149,6 +154,24 @@ export default function LibraryScreen({ focused }: { focused: boolean }) {
                 style={styles.vBtn}
               >
                 <Text style={styles.vBtnText}>◉ Analyse</Text>
+              </Pressable>
+            )}
+            {viewer?.type === "photo" && (
+              <Pressable
+                onPress={async () => {
+                  if (reading) return;
+                  setReading(true);
+                  try {
+                    setOcr(await extractText(viewer.uri));
+                  } catch {
+                    flash("Read failed");
+                  } finally {
+                    setReading(false);
+                  }
+                }}
+                style={styles.vBtn}
+              >
+                <Text style={styles.vBtnText}>⌶ Text</Text>
               </Pressable>
             )}
             {viewer?.type !== "tl" && (

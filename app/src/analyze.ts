@@ -1,6 +1,16 @@
 import { getColors } from "react-native-image-colors";
+import TextRecognition from "@react-native-ml-kit/text-recognition";
 
 export type Swatch = { label: string; hex: string };
+export type TextScan = { text: string; lines: number; words: number };
+
+/** On-device OCR — extract text from an image URI (MLKit, offline). */
+export async function extractText(uri: string): Promise<TextScan> {
+  const r = await TextRecognition.recognize(uri);
+  const lines = r.blocks.reduce((a, b) => a + b.lines.length, 0);
+  const words = r.blocks.reduce((a, b) => a + b.lines.reduce((x, l) => x + l.elements.length, 0), 0);
+  return { text: (r.text ?? "").trim(), lines, words };
+}
 
 /** Extract a colour palette from an image URI. Works across platforms. */
 export async function extractPalette(uri: string): Promise<Swatch[]> {

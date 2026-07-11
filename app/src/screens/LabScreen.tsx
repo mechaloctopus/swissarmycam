@@ -4,8 +4,8 @@ import { CameraView } from "expo-camera";
 import { C, F } from "../theme";
 import { Label, Mono } from "../components/ui";
 import { GridOverlay, Reticle, LevelIndicator } from "../components/Overlays";
-import { PalettePanel } from "../components/PalettePanel";
-import { extractPalette, Swatch } from "../analyze";
+import { PalettePanel, TextResult } from "../components/PalettePanel";
+import { extractPalette, extractText, Swatch, TextScan } from "../analyze";
 
 type Mode = "grid" | "reticle" | "level" | "thirds-safe" | "warm" | "cool" | "false";
 
@@ -24,6 +24,8 @@ export default function LabScreen({ focused }: { focused: boolean }) {
   const [active, setActive] = useState<Set<Mode>>(new Set(["reticle"]));
   const [palette, setPalette] = useState<Swatch[]>([]);
   const [analyzing, setAnalyzing] = useState(false);
+  const [ocr, setOcr] = useState<TextScan | null>(null);
+  const [reading, setReading] = useState(false);
   const toggle = (m: Mode) =>
     setActive((s) => {
       const n = new Set(s);
@@ -42,6 +44,19 @@ export default function LabScreen({ focused }: { focused: boolean }) {
       // ignore
     } finally {
       setAnalyzing(false);
+    }
+  };
+
+  const readFrame = async () => {
+    if (!camRef.current || reading) return;
+    setReading(true);
+    try {
+      const p = await camRef.current.takePictureAsync({ quality: 0.85, skipProcessing: true });
+      if (p?.uri) setOcr(await extractText(p.uri));
+    } catch {
+      setOcr({ text: "", lines: 0, words: 0 });
+    } finally {
+      setReading(false);
     }
   };
 
@@ -77,10 +92,16 @@ export default function LabScreen({ focused }: { focused: boolean }) {
         </View>
 
         <Text style={styles.viLabel}>Visual intelligence</Text>
-        <Pressable onPress={analyzeFrame} disabled={analyzing} style={[styles.analyzeBtn, analyzing && { opacity: 0.6 }]}>
-          <Text style={styles.analyzeText}>{analyzing ? "Analysing frame…" : "◉  Capture & analyse frame"}</Text>
-        </Pressable>
+        <View style={styles.viRow}>
+          <Pressable onPress={analyzeFrame} disabled={analyzing} style={[styles.analyzeBtn, { flex: 1 }, analyzing && { opacity: 0.6 }]}>
+            <Text style={styles.analyzeText}>{analyzing ? "Analysing…" : "◉  Palette"}</Text>
+          </Pressable>
+          <Pressable onPress={readFrame} disabled={reading} style={[styles.analyzeBtn, styles.ocrBtn, { flex: 1 }, reading && { opacity: 0.6 }]}>
+            <Text style={styles.analyzeText}>{reading ? "Reading…" : "⌶  Read text"}</Text>
+          </Pressable>
+        </View>
         <PalettePanel swatches={palette} loading={analyzing} />
+        <TextResult scan={ocr} loading={reading} />
 
         <View style={styles.note}>
           <Mono color={C.native} size={10}>ON-DEVICE</Mono>
@@ -138,5 +159,7 @@ const styles = StyleSheet.create({
   noteText: { color: C.inkMute, fontSize: 13, lineHeight: 19 },
   viLabel: { color: C.inkMute, fontFamily: F.mono, fontSize: 11, letterSpacing: 1, textTransform: "uppercase", marginTop: 22, marginBottom: 10 },
   analyzeBtn: { backgroundColor: C.red, borderRadius: 8, paddingVertical: 14, alignItems: "center" },
+  ocrBtn: { backgroundColor: C.surface, borderWidth: 1, borderColor: C.lineStrong },
+  viRow: { flexDirection: "row", gap: 8 },
   analyzeText: { color: "#fff", fontFamily: F.sansMed, fontWeight: "700", fontSize: 14 },
 });
