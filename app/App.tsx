@@ -16,7 +16,7 @@ import AttachmentsScreen from "./src/screens/AttachmentsScreen";
 import ToolsScreen from "./src/screens/ToolsScreen";
 import LibraryScreen from "./src/screens/LibraryScreen";
 import SettingsScreen from "./src/screens/SettingsScreen";
-import ComingSoonScreen, { ComingSoon } from "./src/screens/ComingSoonScreen";
+import ScreenRecordScreen from "./src/screens/ScreenRecordScreen";
 
 type Kind = "camera" | "plain";
 type Tab = { key: string; name: string; glyph: string; kind: Kind };
@@ -34,27 +34,19 @@ const TABS: Tab[] = [
   { key: "settings", name: "Settings", glyph: "⚙", kind: "plain" },
 ];
 
-const SOON: Record<string, ComingSoon> = {
-  screen: {
-    glyph: "▣", title: "Screen", phase: "Screen studio · Phase 5",
-    levelLabel: "Requires native code", tone: C.native,
-    blurb: "Screen + facecam recording with a facecam bubble, mic mixing and game/tutorial modes — using Android MediaProjection, with a visible recording indicator. User-consented only.",
-    planned: ["Screen recording (MediaProjection)", "Facecam bubble (PiP)", "Mic + commentary mixing", "Game mode", "Tutorial / walkthrough mode", "Recording presets"],
-  },
-};
-
 function Screen({ tabKey, focused }: { tabKey: string; focused: boolean }) {
   switch (tabKey) {
     case "capture": return <CaptureScreen focused={focused} />;
     case "studio": return <StudioScreen focused={focused} />;
     case "editor": return <EditorScreen focused={focused} />;
+    case "screen": return <ScreenRecordScreen />;
     case "timelapse": return <TimelapseScreen focused={focused} />;
     case "lab": return <LabScreen focused={focused} />;
     case "attach": return <AttachmentsScreen focused={focused} />;
     case "tools": return <ToolsScreen />;
     case "library": return <LibraryScreen focused={focused} />;
     case "settings": return <SettingsScreen focused={focused} />;
-    default: return <ComingSoonScreen data={SOON[tabKey]} />;
+    default: return null;
   }
 }
 

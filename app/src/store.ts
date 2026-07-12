@@ -30,6 +30,19 @@ export async function saveVideo(uri: string): Promise<string> {
   return dest;
 }
 
+/**
+ * A fresh destination for a video a native module will write to directly
+ * (e.g. the screen recorder), rather than copy into place after the fact.
+ * Returns both the `file://` URI (for the rest of the app/store) and the
+ * plain filesystem path native Android APIs like MediaRecorder expect.
+ */
+export async function newVideoOutputPath(): Promise<{ uri: string; path: string }> {
+  await ensure(ROOT);
+  const uri = `${ROOT}sac_${Date.now()}.mp4`;
+  const path = uri.replace(/^file:\/\//, "");
+  return { uri, path };
+}
+
 export async function listMedia(): Promise<MediaItem[]> {
   await ensure(ROOT);
   const files = await FileSystem.readDirectoryAsync(ROOT);

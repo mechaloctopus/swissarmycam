@@ -29,11 +29,11 @@ Download `lensii.apk` on your phone and open it (allow "install unknown apps" if
 | **Lab** | ✅ Works | Live viewfinder with real overlay guides + look tints, **plus on-device visual intelligence**: colour-palette analysis, **OCR text extraction**, and **scene/object labeling** (all MLKit/react-native-image-colors, offline) from a captured frame. Deeper GPU pixel analysis (edge/motion/stacking) is Phase 6. |
 | **Library** | ✅ Works | Local-first grid of **photos + videos**, fullscreen photo viewer, **photo editor** (rotate / flip / crop 1:1 → saves a non-destructive copy, via expo-image-manipulator), **video player**, **timelapse playback** (8/12/24 fps), **share**, save-to-Photos, delete. |
 | **Studio** | ✅ Works | Photo layer **compositor**: pick a base photo, add **text** + **sticker** layers, and cut out a **real GPU chroma key** (green/blue screen → transparent PNG, an SkSL shader run on-device via react-native-skia) as a draggable layer over a different base. Drag / scale / rotate / opacity, bring-to-front, **flatten & export** to Library. |
-| **Editor** | ✅ Works (preview) | **Video** editor: pick a base video, **import your own transparent PNG** (or add text), then **keyframe** its position/scale/rotation/opacity over the timeline — scrub, drag, "set keyframe here," and it interpolates and plays back live, moving across the video in real time. Baking to an exported MP4 needs the native video pipeline (ties to screen recording, Phase 5 — next up). |
+| **Editor** | ✅ Works (preview) | **Video** editor: pick a base video, **import your own transparent PNG** (or add text), then **keyframe** its position/scale/rotation/opacity over the timeline — scrub, drag, "set keyframe here," and it interpolates and plays back live, moving across the video in real time. Baking to an exported MP4 is a separate, frame-accurate job (decode/composite/re-encode via MediaCodec/MediaMuxer) — its own staged build, distinct from screen recording. |
 | **Attachments** | ✅ Works | **Device & module inspector**: model / OS / memory (expo-device), detected camera resolutions, **real Camera2 sensor characteristics** per lens (focal lengths, apertures, ISO range, exposure range, sensor size — read-only, via a small local native module), live **sensor scan** (accelerometer / gyro / magnetometer / barometer), and an honest "no external modules detected". USB-C thermal/IR/UV & BLE shutters plug in via the native module (Phase 7). |
 | **Tools** | ✅ Works | **Unit converter** (length, volume, weight, temperature — cm↔in↔ft↔mi, gal↔L↔cups, etc.), and the allocated spot for **NeRF Measure** (premium, planned) — a NeRF/photogrammetry room-scan → AR measurement feature. |
 | **Settings** | ✅ Works | Full **customization hub** — see below — plus honest capability map, privacy, storage usage, reset. |
-| **Screen** | 🔧 Staged | Honest "requires native module" screen (MediaProjection) matching the site's roadmap. |
+| **Screen** | ✅ Works | **Real system-wide screen recording** via Android's MediaProjection: standard OS consent flow, foreground-service-backed capture (with the required Android 14+ persistent notification), optional mic audio, saves straight to Library. Facecam bubble, game mode, and export presets are next. |
 
 ### Everything is customizable (Settings — persisted across launches)
 - **Photo:** aspect ratio (4:3 / 16:9 / 1:1), **picture size** (real device-detected resolutions), JPEG quality.
@@ -94,6 +94,8 @@ app/
 ## Notes on honesty (same as the site)
 
 Software cannot make a phone sensor see IR/UV/thermal wavelengths it physically rejects — those
-need attachments. Manual ISO/shutter/RAW, green-screen compositing, and screen recording need
-native modules and are staged, not faked. Screen recording (Phase 5) will be user-consented with
-a visible indicator. See the in-app **Settings → Capability map**.
+need attachments. Manual ISO/shutter/RAW and frame-accurate video export need native modules and
+are staged, not faked. Green-screen compositing (Studio) and screen recording (Screen) are real,
+shipped native modules — not placeholders. Screen recording uses Android's own system consent
+dialog and a persistent notification/indicator the whole time it runs; it can't be started or hidden
+without that user-visible OS-level consent. See the in-app **Settings → Capability map**.

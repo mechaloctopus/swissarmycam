@@ -285,9 +285,10 @@ export default function EditorScreen({ focused }: { focused: boolean }) {
               <Mono color={C.native} size={10}>LIVE PREVIEW · EXPORT PENDING</Mono>
               <Text style={styles.noteText}>
                 Everything above plays back live and for real — drag, keyframe, and watch the
-                overlay move across the video. Baking this into an exported MP4 needs the native
-                video-encoding pipeline, which lands with screen recording (Phase 5) — the next
-                build after this one.
+                overlay move across the video. Baking this into an exported MP4 is a separate,
+                frame-accurate job (decode every frame, draw the overlay at its interpolated
+                position, re-encode) via MediaCodec/MediaMuxer — a bigger native pipeline than
+                screen recording, which only mirrors the live display. Staged as its own build.
               </Text>
             </View>
           </ScrollView>

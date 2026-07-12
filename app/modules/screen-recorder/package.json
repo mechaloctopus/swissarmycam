@@ -1,0 +1,7 @@
+{
+  "name": "screen-recorder",
+  "version": "1.0.0",
+  "description": "Local Expo module: Android screen recording via MediaProjection (Lensii).",
+  "main": "index.ts",
+  "private": true
+}
