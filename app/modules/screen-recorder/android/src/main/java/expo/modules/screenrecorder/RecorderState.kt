@@ -64,6 +64,7 @@ object RecorderState {
         val manager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         val data = pendingResultData ?: throw IllegalStateException("Missing screen-capture consent data")
         val projection = manager.getMediaProjection(pendingResultCode, data)
+          ?: throw IllegalStateException("System denied the MediaProjection")
         projection.registerCallback(projectionCallback, h)
 
         val metrics = context.resources.displayMetrics
