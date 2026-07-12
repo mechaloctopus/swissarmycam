@@ -9,10 +9,12 @@ import { Mark } from "./src/components/Mark";
 import { Mono } from "./src/components/ui";
 import CaptureScreen from "./src/screens/CaptureScreen";
 import StudioScreen from "./src/screens/StudioScreen";
+import EditorScreen from "./src/screens/EditorScreen";
 import TimelapseScreen from "./src/screens/TimelapseScreen";
 import LabScreen from "./src/screens/LabScreen";
-import LibraryScreen from "./src/screens/LibraryScreen";
 import AttachmentsScreen from "./src/screens/AttachmentsScreen";
+import ToolsScreen from "./src/screens/ToolsScreen";
+import LibraryScreen from "./src/screens/LibraryScreen";
 import SettingsScreen from "./src/screens/SettingsScreen";
 import ComingSoonScreen, { ComingSoon } from "./src/screens/ComingSoonScreen";
 
@@ -22,10 +24,12 @@ type Tab = { key: string; name: string; glyph: string; kind: Kind };
 const TABS: Tab[] = [
   { key: "capture", name: "Capture", glyph: "◎", kind: "camera" },
   { key: "studio", name: "Studio", glyph: "▤", kind: "plain" },
+  { key: "editor", name: "Editor", glyph: "▶", kind: "plain" },
   { key: "screen", name: "Screen", glyph: "▣", kind: "plain" },
   { key: "timelapse", name: "Timelapse", glyph: "⧗", kind: "camera" },
   { key: "lab", name: "Lab", glyph: "⌬", kind: "camera" },
   { key: "attach", name: "Attachments", glyph: "⊕", kind: "plain" },
+  { key: "tools", name: "Tools", glyph: "⚏", kind: "plain" },
   { key: "library", name: "Library", glyph: "▦", kind: "plain" },
   { key: "settings", name: "Settings", glyph: "⚙", kind: "plain" },
 ];
@@ -37,21 +41,17 @@ const SOON: Record<string, ComingSoon> = {
     blurb: "Screen + facecam recording with a facecam bubble, mic mixing and game/tutorial modes — using Android MediaProjection, with a visible recording indicator. User-consented only.",
     planned: ["Screen recording (MediaProjection)", "Facecam bubble (PiP)", "Mic + commentary mixing", "Game mode", "Tutorial / walkthrough mode", "Recording presets"],
   },
-  attach: {
-    glyph: "⊕", title: "Attachments", phase: "Hardware ecosystem · Phase 7",
-    levelLabel: "Requires attachment", tone: C.attach,
-    blurb: "Detect, calibrate and manage external optics and modules — the bridge from software to glass and sensors that a phone physically lacks.",
-    planned: ["USB-C thermal camera modules", "External IR illuminator & night-vision", "UV inspection attachment", "Macro / polarizer / ND clip-ons", "Bluetooth shutter & remote", "Developer API for attachments"],
-  },
 };
 
 function Screen({ tabKey, focused }: { tabKey: string; focused: boolean }) {
   switch (tabKey) {
     case "capture": return <CaptureScreen focused={focused} />;
     case "studio": return <StudioScreen focused={focused} />;
+    case "editor": return <EditorScreen focused={focused} />;
     case "timelapse": return <TimelapseScreen focused={focused} />;
     case "lab": return <LabScreen focused={focused} />;
     case "attach": return <AttachmentsScreen focused={focused} />;
+    case "tools": return <ToolsScreen />;
     case "library": return <LibraryScreen focused={focused} />;
     case "settings": return <SettingsScreen focused={focused} />;
     default: return <ComingSoonScreen data={SOON[tabKey]} />;

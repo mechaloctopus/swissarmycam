@@ -1,5 +1,6 @@
 import * as MediaLibrary from "expo-media-library";
 import * as Sharing from "expo-sharing";
+import * as ImagePicker from "expo-image-picker";
 
 /**
  * Explicit "Save to Photos". Best-effort: if the user hasn't granted the
@@ -27,5 +28,25 @@ export async function shareFile(uri: string): Promise<boolean> {
     return true;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Import an image from the device's photo library — e.g. a transparent PNG
+ * overlay the user made elsewhere. Returns null if cancelled or denied.
+ */
+export async function pickImageFromLibrary(): Promise<string | null> {
+  try {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) return null;
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: "images",
+      quality: 1,
+      allowsEditing: false,
+    });
+    if (result.canceled || !result.assets?.length) return null;
+    return result.assets[0].uri;
+  } catch {
+    return null;
   }
 }
