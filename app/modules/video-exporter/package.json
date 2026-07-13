@@ -1,0 +1,7 @@
+{
+  "name": "video-exporter",
+  "version": "1.0.0",
+  "description": "Local Expo module: frame-accurate keyframed overlay video export via MediaCodec + GLES (Lensii).",
+  "main": "index.ts",
+  "private": true
+}

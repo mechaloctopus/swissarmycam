@@ -29,7 +29,8 @@
     "react-native-safe-area-context": "~5.7.0",
     "react-native-svg": "^15.15.4",
     "react-native-view-shot": "^5.1.0",
-    "screen-recorder": "file:./modules/screen-recorder"
+    "screen-recorder": "file:./modules/screen-recorder",
+    "video-exporter": "file:./modules/video-exporter"
   },
   "devDependencies": {
     "@types/react": "~19.2.2",

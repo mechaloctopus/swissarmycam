@@ -21,10 +21,10 @@ const CAPS: { name: string; level: string; tone: string }[] = [
   { name: "Unit converter (length/volume/weight/temp)", level: "Possible now", tone: C.go },
   { name: "Video keyframe overlay — live preview", level: "Possible now", tone: C.go },
   { name: "Screen recording (system-wide, MediaProjection)", level: "Possible now", tone: C.go },
+  { name: "Frame-accurate video export (MediaCodec + GLES bake)", level: "Possible now", tone: C.go },
   { name: "NeRF Measure (room scan → AR measurement)", level: "Requires cloud compute", tone: C.attach },
   { name: "Manual ISO / shutter / RAW capture", level: "Requires native code", tone: C.native },
   { name: "Input mic-gain / audio DSP", level: "Requires native code", tone: C.native },
-  { name: "Frame-accurate video export (bake overlay to MP4)", level: "Requires native code", tone: C.native },
   { name: "IR / thermal / UV", level: "Requires attachment", tone: C.attach },
 ];
 

@@ -1,12 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { View, Text, StyleSheet, Pressable, PanResponder, ScrollView, Image, Modal, TextInput } from "react-native";
+import { View, Text, StyleSheet, Pressable, PanResponder, ScrollView, Image, Modal, TextInput, ActivityIndicator } from "react-native";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { useEventListener } from "expo";
 import { C, F } from "../theme";
 import { Label, Mono } from "../components/ui";
 import { Slider } from "../components/controls";
-import { listMedia } from "../store";
-import { pickImageFromLibrary } from "../media";
+import { listMedia, newVideoOutputPath } from "../store";
+import { pickImageFromLibrary, saveToPhotos } from "../media";
+import { useSettings } from "../settings";
+import { isVideoExportAvailable, exportOverlaidVideo } from "video-exporter";
 
 type Keyframe = { t: number; x: number; y: number; scale: number; rotation: number; opacity: number };
 type OverlayLayer = { id: string; kind: "image" | "text"; uri?: string; text?: string; color: string; keyframes: Keyframe[] };
@@ -15,6 +17,7 @@ let seq = 0;
 const DEFAULT_KF = (t: number): Keyframe => ({ t, x: 40, y: 40, scale: 1, rotation: 0, opacity: 100 });
 
 export default function EditorScreen({ focused }: { focused: boolean }) {
+  const { settings } = useSettings();
   const [videos, setVideos] = useState<string[]>([]);
   const [baseUri, setBaseUri] = useState<string | null>(null);
   const [layers, setLayers] = useState<OverlayLayer[]>([]);
@@ -24,6 +27,8 @@ export default function EditorScreen({ focused }: { focused: boolean }) {
   const [textInput, setTextInput] = useState("");
   const [toast, setToast] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const exportAvailable = useMemo(() => isVideoExportAvailable(), []);
 
   const player = useVideoPlayer(baseUri ?? "", (p) => {
     p.loop = true;
@@ -159,6 +164,24 @@ export default function EditorScreen({ focused }: { focused: boolean }) {
     setCurrentTime(t);
   };
 
+  const exportVideo = async () => {
+    if (!baseUri || !exportAvailable || exporting) return;
+    if (layers.length === 0) return flash("Add an overlay first");
+    if (canvasSize.w === 0 || canvasSize.h === 0) return flash("Give the preview a moment to lay out, then retry");
+    setExporting(true);
+    try {
+      const { uri, path } = await newVideoOutputPath();
+      await exportOverlaidVideo(baseUri, path, layers, canvasSize.w, canvasSize.h);
+      flash("Exported to Library");
+      if (settings.autoSaveToPhotos) saveToPhotos(uri);
+      loadVideos();
+    } catch {
+      flash("Export failed — see Settings for build details");
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <View style={styles.root}>
       <View style={styles.head}>
@@ -218,6 +241,19 @@ export default function EditorScreen({ focused }: { focused: boolean }) {
                 <Text style={styles.addText}>Change video</Text>
               </Pressable>
             </View>
+
+            {exportAvailable && (
+              <Pressable onPress={exportVideo} disabled={exporting || layers.length === 0} style={[styles.exportBtn, (exporting || layers.length === 0) && { opacity: 0.55 }]}>
+                {exporting ? (
+                  <>
+                    <ActivityIndicator color="#fff" size="small" />
+                    <Text style={styles.exportBtnText}>Baking MP4…</Text>
+                  </>
+                ) : (
+                  <Text style={styles.exportBtnText}>⬇ Export baked MP4</Text>
+                )}
+              </Pressable>
+            )}
 
             {layers.length > 0 && (
               <>
@@ -282,13 +318,13 @@ export default function EditorScreen({ focused }: { focused: boolean }) {
             )}
 
             <View style={styles.note}>
-              <Mono color={C.native} size={10}>LIVE PREVIEW · EXPORT PENDING</Mono>
+              <Mono color={exportAvailable ? C.go : C.native} size={10}>
+                {exportAvailable ? "REAL · MEDIACODEC + GLES RE-ENCODE" : "REQUIRES NATIVE MODULE"}
+              </Mono>
               <Text style={styles.noteText}>
-                Everything above plays back live and for real — drag, keyframe, and watch the
-                overlay move across the video. Baking this into an exported MP4 is a separate,
-                frame-accurate job (decode every frame, draw the overlay at its interpolated
-                position, re-encode) via MediaCodec/MediaMuxer — a bigger native pipeline than
-                screen recording, which only mirrors the live display. Staged as its own build.
+                {exportAvailable
+                  ? "Export decodes every frame of your video, draws each overlay at its interpolated keyframe position via OpenGL, and re-encodes to a new MP4 — a real bake, not a screen capture. Audio is copied through untouched. This is brand-new native code; if a bake looks off on your device (position, timing, or a crash), that's useful signal — the live preview above is unaffected either way."
+                  : "Export needs the video-exporter native module, which ships with the Android build. If you're seeing this, the module didn't link — check Settings for the build version."}
               </Text>
             </View>
           </ScrollView>
@@ -407,6 +443,8 @@ const styles = StyleSheet.create({
   addRow: { flexDirection: "row", gap: 8 },
   addBtn: { flex: 1, borderWidth: 1, borderColor: C.lineStrong, borderRadius: 8, paddingVertical: 11, alignItems: "center", backgroundColor: C.surface },
   addText: { color: C.inkSoft, fontFamily: F.mono, fontSize: 11.5 },
+  exportBtn: { marginTop: 10, flexDirection: "row", gap: 8, backgroundColor: C.red, borderRadius: 8, paddingVertical: 13, alignItems: "center", justifyContent: "center" },
+  exportBtnText: { color: "#fff", fontFamily: F.sansMed, fontWeight: "700", fontSize: 13.5 },
   layerChip: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8, borderWidth: 1, borderColor: C.lineStrong, backgroundColor: C.surface },
   layerChipOn: { backgroundColor: C.red, borderColor: C.red },
   controls: { marginTop: 18, backgroundColor: C.surface, borderWidth: 1, borderColor: C.line, borderRadius: 10, padding: 14 },
