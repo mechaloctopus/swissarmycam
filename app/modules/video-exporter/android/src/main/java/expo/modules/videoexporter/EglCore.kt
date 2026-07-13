@@ -4,6 +4,7 @@ import android.opengl.EGL14
 import android.opengl.EGLConfig
 import android.opengl.EGLContext
 import android.opengl.EGLDisplay
+import android.opengl.EGLExt
 import android.opengl.EGLSurface
 import android.view.Surface
 
@@ -65,7 +66,7 @@ class EglCore {
   fun swapBuffers(eglSurface: EGLSurface): Boolean = EGL14.eglSwapBuffers(eglDisplay, eglSurface)
 
   fun setPresentationTime(eglSurface: EGLSurface, nsecs: Long) {
-    EGL14.eglPresentationTimeANDROID(eglDisplay, eglSurface, nsecs)
+    EGLExt.eglPresentationTimeANDROID(eglDisplay, eglSurface, nsecs)
   }
 
   fun releaseSurface(eglSurface: EGLSurface) {
