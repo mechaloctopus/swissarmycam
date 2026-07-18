@@ -7,6 +7,7 @@ import * as FileSystem from "expo-file-system/legacy";
  */
 const ROOT = (FileSystem.documentDirectory ?? "") + "captures/";
 const TL_ROOT = (FileSystem.documentDirectory ?? "") + "timelapse/";
+const SCAN_ROOT = (FileSystem.documentDirectory ?? "") + "scans/";
 
 export type MediaKind = "photo" | "video";
 export type MediaItem = { uri: string; kind: MediaKind; name: string };
@@ -62,10 +63,10 @@ export async function countMedia(): Promise<{ photos: number; videos: number }> 
   return { photos: items.filter((i) => i.kind === "photo").length, videos: items.filter((i) => i.kind === "video").length };
 }
 
-/** Total bytes used by in-app captures + timelapse sets. */
+/** Total bytes used by in-app captures + timelapse + scan sets. */
 export async function storageBytes(): Promise<number> {
   let total = 0;
-  for (const root of [ROOT, TL_ROOT]) {
+  for (const root of [ROOT, TL_ROOT, SCAN_ROOT]) {
     try {
       await ensure(root);
       const walk = async (dir: string) => {
@@ -87,6 +88,7 @@ export async function storageBytes(): Promise<number> {
 export async function clearAllCaptures(): Promise<void> {
   await FileSystem.deleteAsync(ROOT, { idempotent: true });
   await FileSystem.deleteAsync(TL_ROOT, { idempotent: true });
+  await FileSystem.deleteAsync(SCAN_ROOT, { idempotent: true });
 }
 
 /* ---- Timelapse frame sets ---- */
@@ -122,6 +124,49 @@ export async function listTimelapseSessions(): Promise<TLSession[]> {
 
 export async function deleteTimelapseSession(session: string): Promise<void> {
   await FileSystem.deleteAsync(`${TL_ROOT}${session}/`, { idempotent: true });
+}
+
+/**
+ * Room/object scan capture — a guided set of overlapping photos from many
+ * angles, saved as a set (same shape as a timelapse session). This is the
+ * real, on-device part of "NeRF Measure": capturing enough coverage for a
+ * future photogrammetry/NeRF reconstruction pipeline. That reconstruction
+ * step itself needs real cloud compute this project doesn't have yet, so it
+ * isn't faked here — a scan session is just a saved, well-formed photo set,
+ * ready for whenever that pipeline exists.
+ */
+export function newScanSession(): string {
+  return `scan_${Date.now()}`;
+}
+
+export async function saveScanFrame(session: string, uri: string, index: number): Promise<string> {
+  const dir = `${SCAN_ROOT}${session}/`;
+  await ensure(dir);
+  const dest = `${dir}frame_${String(index).padStart(5, "0")}.jpg`;
+  await FileSystem.copyAsync({ from: uri, to: dest });
+  return dest;
+}
+
+export type ScanSession = { session: string; frames: string[]; cover: string | null };
+
+export async function listScanSessions(): Promise<ScanSession[]> {
+  await ensure(SCAN_ROOT);
+  const sessions = await FileSystem.readDirectoryAsync(SCAN_ROOT);
+  const out: ScanSession[] = [];
+  for (const s of sessions.sort().reverse()) {
+    const dir = `${SCAN_ROOT}${s}/`;
+    try {
+      const frames = (await FileSystem.readDirectoryAsync(dir)).filter((f) => f.endsWith(".jpg")).sort().map((f) => dir + f);
+      out.push({ session: s, frames, cover: frames.length ? frames[0] : null });
+    } catch {
+      // ignore unreadable session dirs
+    }
+  }
+  return out;
+}
+
+export async function deleteScanSession(session: string): Promise<void> {
+  await FileSystem.deleteAsync(`${SCAN_ROOT}${session}/`, { idempotent: true });
 }
 
 export function humanBytes(n: number): string {

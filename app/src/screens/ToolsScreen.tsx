@@ -136,40 +136,42 @@ function NerfMeasureCard() {
     <View style={[styles.card, styles.nerfCard]}>
       <View style={styles.nerfHead}>
         <View>
-          <Mono color={C.inkMute} size={10} style={{ letterSpacing: 1.2 }}>FUTURE · ALLOCATED</Mono>
+          <Mono color={C.inkMute} size={10} style={{ letterSpacing: 1.2 }}>CAPTURE IS LIVE</Mono>
           <Text style={styles.nerfTitle}>NeRF Measure</Text>
         </View>
-        <StatusPill label="Premium (planned)" tone={C.attach} />
+        <StatusPill label="Reconstruct: planned" tone={C.attach} />
       </View>
 
       <Text style={styles.nerfBody}>
-        Walk a room or job site while capturing a short video or a burst of photos. NeRF Measure
-        reconstructs the space as a 3D scene — a neural radiance field, the same family of technique
-        behind tools like Polycam and Luma — and lets you drop measurement points directly on the
-        reconstructed model to read real-world distances, areas, and volumes back out of the scan.
+        Walk a room or job site capturing overlapping multi-angle photos in the new{" "}
+        <Text style={{ color: C.ink, fontWeight: "700" }}>Scan</Text> tab — real, on-device, working
+        today. NeRF Measure reconstructs that photo set into a 3D scene — a neural radiance field,
+        the same family of technique behind tools like Polycam and Luma — and lets you drop
+        measurement points directly on the reconstructed model to read real-world distances, areas,
+        and volumes back out of the scan.
       </Text>
 
       <View style={styles.nerfSteps}>
         {[
-          "Capture — walk the space, video or multi-angle photos",
+          "Capture — real today: Scan tab, guided multi-angle photo set",
           "Reconstruct — on-device pre-processing, cloud NeRF/photogrammetry solve",
           "Measure — tap two points on the 3D model, read the real distance",
         ].map((s, i) => (
           <View key={s} style={styles.nerfStep}>
-            <Mono color={C.red} size={11}>{String(i + 1).padStart(2, "0")}</Mono>
+            <Mono color={i === 0 ? C.go : C.red} size={11}>{String(i + 1).padStart(2, "0")}</Mono>
             <Text style={styles.nerfStepText}>{s}</Text>
           </View>
         ))}
       </View>
 
       <View style={styles.nerfNote}>
-        <Mono color={C.attach} size={10}>REQUIRES CLOUD COMPUTE + NATIVE AR</Mono>
+        <Mono color={C.attach} size={10}>RECONSTRUCTION REQUIRES CLOUD COMPUTE + NATIVE AR</Mono>
         <Text style={styles.nerfNoteText}>
           Reconstructing a radiance field from a handful of frames is heavy — real-time on a phone
-          isn't there yet, so this ships as capture-on-device, reconstruct-in-the-cloud, review-and-
-          measure-on-device. Placed here, allotted a spot on the instrument, honestly staged rather
-          than faked. AR measurement overlay reuses ARKit/ARCore for the live view once the
-          reconstruction pipeline lands.
+          isn't there yet, so this ships as capture-on-device (done), reconstruct-in-the-cloud,
+          review-and-measure-on-device (still ahead). Scans captured in the Scan tab are saved and
+          ready for that pipeline whenever it exists — nothing here is faked. AR measurement overlay
+          reuses ARKit/ARCore for the live view once the reconstruction pipeline lands.
         </Text>
       </View>
     </View>

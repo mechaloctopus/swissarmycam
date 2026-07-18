@@ -17,6 +17,7 @@ import ToolsScreen from "./src/screens/ToolsScreen";
 import LibraryScreen from "./src/screens/LibraryScreen";
 import SettingsScreen from "./src/screens/SettingsScreen";
 import ScreenRecordScreen from "./src/screens/ScreenRecordScreen";
+import RoomScanScreen from "./src/screens/RoomScanScreen";
 
 type Kind = "camera" | "plain";
 type Tab = { key: string; name: string; glyph: string; kind: Kind };
@@ -27,6 +28,7 @@ const TABS: Tab[] = [
   { key: "editor", name: "Editor", glyph: "▶", kind: "plain" },
   { key: "screen", name: "Screen", glyph: "▣", kind: "plain" },
   { key: "timelapse", name: "Timelapse", glyph: "⧗", kind: "camera" },
+  { key: "scan", name: "Scan", glyph: "◫", kind: "camera" },
   { key: "lab", name: "Lab", glyph: "⌬", kind: "camera" },
   { key: "attach", name: "Attachments", glyph: "⊕", kind: "plain" },
   { key: "tools", name: "Tools", glyph: "⚏", kind: "plain" },
@@ -41,6 +43,7 @@ function Screen({ tabKey, focused }: { tabKey: string; focused: boolean }) {
     case "editor": return <EditorScreen focused={focused} />;
     case "screen": return <ScreenRecordScreen />;
     case "timelapse": return <TimelapseScreen focused={focused} />;
+    case "scan": return <RoomScanScreen focused={focused} />;
     case "lab": return <LabScreen focused={focused} />;
     case "attach": return <AttachmentsScreen focused={focused} />;
     case "tools": return <ToolsScreen />;
