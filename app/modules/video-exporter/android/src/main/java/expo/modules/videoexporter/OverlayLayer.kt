@@ -25,8 +25,16 @@ data class ExportLayer(
   val uri: String?,
   val text: String?,
   val color: String,
-  val keyframes: List<ExportKeyframe>
+  val keyframes: List<ExportKeyframe>,
+  /** "video" layers only — chroma key params for compositing a green/blue-screen clip. */
+  val keyColor: List<Float>? = null,
+  val threshold: Float = 0.35f,
+  val smoothing: Float = 0.15f
 )
+
+/** The Editor preview's fixed placeholder box for video layers (canvas-space points). */
+const val VIDEO_LAYER_BOX_W = 120f
+const val VIDEO_LAYER_BOX_H = 90f
 
 object LayerParser {
   fun parse(json: String): List<ExportLayer> {
@@ -50,13 +58,20 @@ object LayerParser {
         )
       }
       kfs.sortBy { it.t }
+      val keyColorArr = if (o.has("keyColor") && !o.isNull("keyColor")) o.getJSONArray("keyColor") else null
+      val keyColor = if (keyColorArr != null && keyColorArr.length() >= 3) {
+        listOf(keyColorArr.getDouble(0).toFloat(), keyColorArr.getDouble(1).toFloat(), keyColorArr.getDouble(2).toFloat())
+      } else null
       out.add(
         ExportLayer(
           kind = o.getString("kind"),
           uri = if (!o.has("uri") || o.isNull("uri")) null else o.getString("uri"),
           text = if (!o.has("text") || o.isNull("text")) null else o.getString("text"),
           color = if (o.has("color") && !o.isNull("color")) o.getString("color") else "#FFFFFF",
-          keyframes = kfs
+          keyframes = kfs,
+          keyColor = keyColor,
+          threshold = if (o.has("threshold") && !o.isNull("threshold")) o.getDouble("threshold").toFloat() else 0.35f,
+          smoothing = if (o.has("smoothing") && !o.isNull("smoothing")) o.getDouble("smoothing").toFloat() else 0.15f
         )
       )
     }
@@ -149,3 +164,6 @@ object LayerBitmapFactory {
     return if (layer.kind == "image") Pair(100f, 100f) else naturalSize
   }
 }
+
+/** Video layers pivot/size the same fixed placeholder box the Editor preview shows for them. */
+fun videoLayerNaturalSize(): Pair<Float, Float> = Pair(VIDEO_LAYER_BOX_W, VIDEO_LAYER_BOX_H)

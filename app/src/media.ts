@@ -50,3 +50,22 @@ export async function pickImageFromLibrary(): Promise<string | null> {
     return null;
   }
 }
+
+/**
+ * Import a video from the device's photo library — e.g. a green-screen clip
+ * to key and overlay in the Editor. Returns null if cancelled or denied.
+ */
+export async function pickVideoFromLibrary(): Promise<string | null> {
+  try {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) return null;
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: "videos",
+      quality: 1,
+    });
+    if (result.canceled || !result.assets?.length) return null;
+    return result.assets[0].uri;
+  } catch {
+    return null;
+  }
+}

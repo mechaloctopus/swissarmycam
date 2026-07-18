@@ -6,15 +6,31 @@ import { C, F } from "../theme";
 import { Label, Mono } from "../components/ui";
 import { Slider } from "../components/controls";
 import { listMedia, newVideoOutputPath } from "../store";
-import { pickImageFromLibrary, saveToPhotos } from "../media";
+import { pickImageFromLibrary, pickVideoFromLibrary, saveToPhotos } from "../media";
 import { useSettings } from "../settings";
 import { isVideoExportAvailable, exportOverlaidVideo } from "video-exporter";
+import { KEY_PRESETS } from "../chroma";
 
 type Keyframe = { t: number; x: number; y: number; scale: number; rotation: number; opacity: number };
-type OverlayLayer = { id: string; kind: "image" | "text"; uri?: string; text?: string; color: string; keyframes: Keyframe[] };
+type OverlayLayer = {
+  id: string;
+  kind: "image" | "text" | "video";
+  uri?: string;
+  text?: string;
+  color: string;
+  keyframes: Keyframe[];
+  /** "video" layers only — chroma key params, static per layer (not keyframed). */
+  keyColor?: [number, number, number];
+  threshold?: number;
+  smoothing?: number;
+};
 
 let seq = 0;
 const DEFAULT_KF = (t: number): Keyframe => ({ t, x: 40, y: 40, scale: 1, rotation: 0, opacity: 100 });
+// Fixed placeholder footprint for "video" layers in the preview — mirrors
+// VIDEO_LAYER_BOX_W/H in the native module's OverlayLayer.kt.
+const VIDEO_BOX_W = 120;
+const VIDEO_BOX_H = 90;
 
 export default function EditorScreen({ focused }: { focused: boolean }) {
   const { settings } = useSettings();
@@ -82,10 +98,30 @@ export default function EditorScreen({ focused }: { focused: boolean }) {
     return kfs[kfs.length - 1];
   }, []);
 
-  const addLayer = (kind: "image" | "text", opts: { uri?: string; text?: string }) => {
+  const addLayer = (
+    kind: "image" | "text" | "video",
+    opts: { uri?: string; text?: string; keyColor?: [number, number, number]; threshold?: number; smoothing?: number }
+  ) => {
     const id = `OV${++seq}`;
-    setLayers((ls) => [...ls, { id, kind, uri: opts.uri, text: opts.text, color: "#FFFFFF", keyframes: [DEFAULT_KF(0)] }]);
+    setLayers((ls) => [
+      ...ls,
+      {
+        id,
+        kind,
+        uri: opts.uri,
+        text: opts.text,
+        color: "#FFFFFF",
+        keyframes: [DEFAULT_KF(0)],
+        keyColor: opts.keyColor,
+        threshold: opts.threshold,
+        smoothing: opts.smoothing,
+      },
+    ]);
     setSelectedId(id);
+  };
+
+  const patchLayer = (id: string, patch: Partial<OverlayLayer>) => {
+    setLayers((ls) => ls.map((l) => (l.id === id ? { ...l, ...patch } : l)));
   };
 
   const removeSelected = () => {
@@ -100,6 +136,17 @@ export default function EditorScreen({ focused }: { focused: boolean }) {
       const uri = await pickImageFromLibrary();
       if (uri) addLayer("image", { uri });
       else flash("No image selected");
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const importGreenScreenClip = async () => {
+    setImporting(true);
+    try {
+      const uri = await pickVideoFromLibrary();
+      if (uri) addLayer("video", { uri, keyColor: KEY_PRESETS.green, threshold: 0.35, smoothing: 0.15 });
+      else flash("No clip selected");
     } finally {
       setImporting(false);
     }
@@ -237,6 +284,11 @@ export default function EditorScreen({ focused }: { focused: boolean }) {
               <Pressable onPress={() => setTextModal(true)} style={styles.addBtn}>
                 <Text style={styles.addText}>+ Text</Text>
               </Pressable>
+            </View>
+            <View style={[styles.addRow, { marginTop: 8 }]}>
+              <Pressable onPress={importGreenScreenClip} disabled={importing} style={styles.addBtn}>
+                <Text style={styles.addText}>{importing ? "Importing…" : "🎬 Green-screen clip"}</Text>
+              </Pressable>
               <Pressable onPress={() => setBaseUri(null)} style={styles.addBtn}>
                 <Text style={styles.addText}>Change video</Text>
               </Pressable>
@@ -263,6 +315,8 @@ export default function EditorScreen({ focused }: { focused: boolean }) {
                     <Pressable key={l.id} onPress={() => setSelectedId(l.id)} style={[styles.layerChip, l.id === selectedId && styles.layerChipOn]}>
                       {l.kind === "image" && l.uri ? (
                         <Image source={{ uri: l.uri }} style={{ width: 20, height: 20, borderRadius: 4 }} />
+                      ) : l.kind === "video" ? (
+                        <Text style={{ fontSize: 12, color: l.id === selectedId ? "#fff" : C.inkSoft }}>🎬 {l.uri?.split("/").pop()?.slice(0, 10) ?? "clip"}</Text>
                       ) : (
                         <Text style={{ fontSize: 12, color: l.id === selectedId ? "#fff" : C.inkSoft }}>{l.text || "Text"}</Text>
                       )}
@@ -276,7 +330,9 @@ export default function EditorScreen({ focused }: { focused: boolean }) {
             {selected && (
               <View style={styles.controls}>
                 <View style={styles.controlHead}>
-                  <Mono color={C.ink} size={12}>{selected.kind === "text" ? selected.text : "Image overlay"}</Mono>
+                  <Mono color={C.ink} size={12}>
+                    {selected.kind === "text" ? selected.text : selected.kind === "video" ? "Green-screen clip" : "Image overlay"}
+                  </Mono>
                   <Pressable onPress={removeSelected}>
                     <Mono color={C.red} size={11}>delete</Mono>
                   </Pressable>
@@ -285,6 +341,28 @@ export default function EditorScreen({ focused }: { focused: boolean }) {
                 <Mono color={C.inkMute} size={10} style={{ marginTop: 4 }}>
                   Drag the overlay in the canvas above, then tap "Set keyframe here" to lock its position at {currentTime.toFixed(1)}s.
                 </Mono>
+
+                {selected.kind === "video" && (
+                  <View style={styles.chromaBox}>
+                    <Mono color={C.inkMute} size={10} style={{ marginBottom: 8 }}>CHROMA KEY</Mono>
+                    <View style={{ flexDirection: "row", gap: 8, marginBottom: 4 }}>
+                      {(Object.keys(KEY_PRESETS) as Array<keyof typeof KEY_PRESETS>).map((k) => {
+                        const on = selected.keyColor?.[0] === KEY_PRESETS[k][0] && selected.keyColor?.[1] === KEY_PRESETS[k][1] && selected.keyColor?.[2] === KEY_PRESETS[k][2];
+                        return (
+                          <Pressable key={k} onPress={() => patchLayer(selected.id, { keyColor: KEY_PRESETS[k] })} style={[styles.keyPreset, on && styles.keyPresetOn, { backgroundColor: k === "green" ? "#1a5c2e" : "#1a3a5c" }]}>
+                            <Text style={{ color: "#fff", fontFamily: F.mono, fontSize: 11 }}>{k}</Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                    <CtrlRow label="Threshold">
+                      <Slider value={Math.round((selected.threshold ?? 0.35) * 100)} min={5} max={80} step={1} onChange={(v) => patchLayer(selected.id, { threshold: v / 100 })} width={140} />
+                    </CtrlRow>
+                    <CtrlRow label="Edge softness">
+                      <Slider value={Math.round((selected.smoothing ?? 0.15) * 100)} min={2} max={50} step={1} onChange={(v) => patchLayer(selected.id, { smoothing: v / 100 })} width={140} />
+                    </CtrlRow>
+                  </View>
+                )}
 
                 <Pressable onPress={addKeyframeHere} style={styles.kfBtn}>
                   <Text style={styles.kfBtnText}>◆ Set keyframe here ({currentTime.toFixed(1)}s)</Text>
@@ -323,7 +401,7 @@ export default function EditorScreen({ focused }: { focused: boolean }) {
               </Mono>
               <Text style={styles.noteText}>
                 {exportAvailable
-                  ? "Export decodes every frame of your video, draws each overlay at its interpolated keyframe position via OpenGL, and re-encodes to a new MP4 — a real bake, not a screen capture. Audio is copied through untouched. This is brand-new native code; if a bake looks off on your device (position, timing, or a crash), that's useful signal — the live preview above is unaffected either way."
+                  ? "Export decodes every frame of your video, draws each overlay at its interpolated keyframe position via OpenGL, and re-encodes to a new MP4 — a real bake, not a screen capture. Green-screen clips get their own decoder, keyed per-frame with the same distance+threshold shader Studio uses for photos, then composited in. Audio is copied through untouched. This is brand-new native code; if a bake looks off on your device (position, timing, chroma edges, or a crash), that's useful signal — the live preview above (which shows a placeholder box for green-screen clips, not a live keyed preview) is unaffected either way."
                   : "Export needs the video-exporter native module, which ships with the Android build. If you're seeing this, the module didn't link — check Settings for the build version."}
               </Text>
             </View>
@@ -412,6 +490,11 @@ function OverlaySprite({
       <View style={selected ? styles.spriteSelected : undefined}>
         {layer.kind === "image" && layer.uri ? (
           <Image source={{ uri: layer.uri }} style={{ width: 100, height: 100 }} resizeMode="contain" />
+        ) : layer.kind === "video" ? (
+          <View style={styles.videoPlaceholder}>
+            <Text style={{ fontSize: 22 }}>🎬</Text>
+            <Mono color="#fff" size={9} style={{ marginTop: 4 }}>chroma key</Mono>
+          </View>
         ) : (
           <Text style={{ color: layer.color, fontSize: 24, fontWeight: "800", fontFamily: F.sansMed }}>{layer.text}</Text>
         )}
@@ -437,6 +520,10 @@ const styles = StyleSheet.create({
   videoCell: { width: 96, height: 96, borderRadius: 10, borderWidth: 1, borderColor: C.lineStrong, backgroundColor: C.surface, alignItems: "center", justifyContent: "center", padding: 8 },
   canvasWrap: { height: 280, backgroundColor: "#000", marginHorizontal: 16, borderRadius: 10, overflow: "hidden", borderWidth: 1, borderColor: C.line },
   spriteSelected: { borderWidth: 1, borderColor: C.red, borderStyle: "dashed", padding: 2 },
+  videoPlaceholder: { width: VIDEO_BOX_W, height: VIDEO_BOX_H, borderRadius: 8, borderWidth: 1, borderColor: "rgba(255,255,255,0.4)", backgroundColor: "rgba(20,90,50,0.55)", alignItems: "center", justifyContent: "center" },
+  chromaBox: { marginTop: 14, backgroundColor: C.bg2, borderWidth: 1, borderColor: C.line, borderRadius: 8, padding: 12 },
+  keyPreset: { flex: 1, alignItems: "center", paddingVertical: 8, borderRadius: 6, borderWidth: 1, borderColor: "transparent" },
+  keyPresetOn: { borderColor: "#fff" },
   transportRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 16, paddingVertical: 14 },
   playBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: C.red, alignItems: "center", justifyContent: "center" },
   panel: { flex: 1 },

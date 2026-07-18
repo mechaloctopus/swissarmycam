@@ -68,6 +68,7 @@ class VideoExportEngine(private val context: Context) {
 
     val videoProgram = TextureProgram(isExternal = true)
     val overlayProgram = TextureProgram(isExternal = false)
+    val chromaProgram = ChromaKeyProgram()
     val oesTextureId = videoProgram.createTexture()
 
     val glThread = HandlerThread("LensiiVideoExportGL").apply { start() }
@@ -82,9 +83,9 @@ class VideoExportEngine(private val context: Context) {
     decoder.configure(inputFormat, decoderSurface, null, 0)
     decoder.start()
 
-    // Upload every overlay layer's bitmap once, up front.
+    // Upload every image/text overlay layer's bitmap once, up front.
     data class Overlay(val layer: ExportLayer, val texId: Int, val naturalW: Float, val naturalH: Float, val layoutW: Float, val layoutH: Float)
-    val overlays = layers.map { layer ->
+    val overlays = layers.filter { it.kind != "video" }.map { layer ->
       val bmp = LayerBitmapFactory.build(context, layer)
       val texId = overlayProgram.createTexture()
       GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, texId)
@@ -95,11 +96,50 @@ class VideoExportEngine(private val context: Context) {
       Overlay(layer, texId, natW, natH, layoutW, layoutH)
     }
 
+    // Each "video" layer (a green/blue-screen clip) gets its own independent
+    // decode pipeline, driven forward per base-video frame — see
+    // OverlayVideoDecoder for why this is kept as its own small unit.
+    data class VideoOverlay(val layer: ExportLayer, val decoder: OverlayVideoDecoder, val naturalW: Float, val naturalH: Float)
+    val videoOverlays = layers.filter { it.kind == "video" && it.uri != null }.mapNotNull { layer ->
+      try {
+        val texId = chromaProgram.createTexture()
+        val dec = OverlayVideoDecoder(layer.uri!!.removePrefix("file://"), glHandler, texId)
+        val (natW, natH) = videoLayerNaturalSize()
+        VideoOverlay(layer, dec, natW, natH)
+      } catch (e: Exception) {
+        null // A broken green-screen clip shouldn't fail the whole export.
+      }
+    }
+
     // Maps the Editor's contentFit="contain" preview canvas onto the video's native pixels.
     val containScale = (minOf(canvasWidth.toFloat() / videoWidth, canvasHeight.toFloat() / videoHeight))
       .let { if (it.isNaN() || it <= 0f) 1f else it }
     val offsetX = (canvasWidth - videoWidth * containScale) / 2f
     val offsetY = (canvasHeight - videoHeight * containScale) / 2f
+
+    // Shared by every overlay kind: maps a keyframe transform (in Editor preview
+    // canvas-space) to the NDC model matrix for drawing into the video frame.
+    fun modelMatrixFor(t: ExportKeyframe, layoutW: Float, layoutH: Float, naturalW: Float, naturalH: Float): FloatArray {
+      val anchorCanvasX = t.x.toFloat() + layoutW / 2f
+      val anchorCanvasY = t.y.toFloat() + layoutH / 2f
+      val anchorVideoX = (anchorCanvasX - offsetX) / containScale
+      val anchorVideoY = (anchorCanvasY - offsetY) / containScale
+      val quadW = (naturalW / containScale) * t.scale.toFloat()
+      val quadH = (naturalH / containScale) * t.scale.toFloat()
+
+      val ndcX = (anchorVideoX / videoWidth) * 2f - 1f
+      val ndcY = 1f - (anchorVideoY / videoHeight) * 2f
+      val ndcW = (quadW / videoWidth) * 2f
+      val ndcH = (quadH / videoHeight) * 2f
+
+      val model = FloatArray(16)
+      Matrix.setIdentityM(model, 0)
+      Matrix.translateM(model, 0, ndcX, ndcY, 0f)
+      // Preview rotation is defined in a y-down coordinate space; NDC is y-up, so negate to match.
+      Matrix.rotateM(model, 0, -t.rotation.toFloat(), 0f, 0f, 1f)
+      Matrix.scaleM(model, 0, ndcW / 2f, ndcH / 2f, 1f)
+      return model
+    }
 
     val muxer = MediaMuxer(outputPath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
     var muxerVideoTrack = -1
@@ -154,28 +194,19 @@ class VideoExportEngine(private val context: Context) {
               GLES20.glEnable(GLES20.GL_BLEND)
               GLES20.glBlendFunc(GLES20.GL_SRC_ALPHA, GLES20.GL_ONE_MINUS_SRC_ALPHA)
               val frameTimeSec = framePtsUs / 1_000_000.0
+
               for (ov in overlays) {
                 val t = LayerParser.transformAt(ov.layer, frameTimeSec)
-                val anchorCanvasX = t.x.toFloat() + ov.layoutW / 2f
-                val anchorCanvasY = t.y.toFloat() + ov.layoutH / 2f
-                val anchorVideoX = (anchorCanvasX - offsetX) / containScale
-                val anchorVideoY = (anchorCanvasY - offsetY) / containScale
-                val quadW = (ov.naturalW / containScale) * t.scale.toFloat()
-                val quadH = (ov.naturalH / containScale) * t.scale.toFloat()
-
-                val ndcX = (anchorVideoX / videoWidth) * 2f - 1f
-                val ndcY = 1f - (anchorVideoY / videoHeight) * 2f
-                val ndcW = (quadW / videoWidth) * 2f
-                val ndcH = (quadH / videoHeight) * 2f
-
-                val model = FloatArray(16)
-                Matrix.setIdentityM(model, 0)
-                Matrix.translateM(model, 0, ndcX, ndcY, 0f)
-                // Preview rotation is defined in a y-down coordinate space; NDC is y-up, so negate to match.
-                Matrix.rotateM(model, 0, -t.rotation.toFloat(), 0f, 0f, 1f)
-                Matrix.scaleM(model, 0, ndcW / 2f, ndcH / 2f, 1f)
-
+                val model = modelMatrixFor(t, ov.layoutW, ov.layoutH, ov.naturalW, ov.naturalH)
                 overlayProgram.draw(model, identity, ov.texId, (t.opacity / 100.0).toFloat())
+              }
+
+              for (vo in videoOverlays) {
+                if (!vo.decoder.advanceTo(framePtsUs)) continue
+                val t = LayerParser.transformAt(vo.layer, frameTimeSec)
+                val model = modelMatrixFor(t, vo.naturalW, vo.naturalH, vo.naturalW, vo.naturalH)
+                val keyColor = vo.layer.keyColor ?: listOf(0.06f, 0.72f, 0.2f)
+                chromaProgram.draw(model, vo.decoder.texMatrix, vo.decoder.texId, keyColor, vo.layer.threshold, vo.layer.smoothing, (t.opacity / 100.0).toFloat())
               }
 
               windowSurface.setPresentationTime(framePtsUs * 1000)
@@ -230,6 +261,9 @@ class VideoExportEngine(private val context: Context) {
         }
       }
     } finally {
+      for (vo in videoOverlays) {
+        try { vo.decoder.release() } catch (e: Exception) { }
+      }
       try { decoder.stop() } catch (e: Exception) { }
       decoder.release()
       try { encoder.stop() } catch (e: Exception) { }
@@ -257,26 +291,3 @@ class VideoExportEngine(private val context: Context) {
   }
 }
 
-/**
- * Signals when a decoded frame has landed in the SurfaceTexture. The listener
- * fires on [glHandler]'s HandlerThread (SurfaceTexture requires a Looper
- * thread to deliver it); the exporter's own thread polls the volatile flag
- * rather than using Object.wait/notify, to keep this file free of any
- * Kotlin/Java Object-monitor interop ambiguity.
- */
-private class FrameWaiter : SurfaceTexture.OnFrameAvailableListener {
-  @Volatile private var available = false
-
-  override fun onFrameAvailable(surfaceTexture: SurfaceTexture) {
-    available = true
-  }
-
-  fun await(timeoutMs: Long) {
-    var waited = 0L
-    while (!available && waited < timeoutMs) {
-      Thread.sleep(5)
-      waited += 5
-    }
-    available = false
-  }
-}

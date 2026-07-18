@@ -29,7 +29,7 @@ Download `lensii.apk` on your phone and open it (allow "install unknown apps" if
 | **Lab** | ✅ Works | Live viewfinder with real overlay guides + look tints, **plus on-device visual intelligence**: colour-palette analysis, **OCR text extraction**, and **scene/object labeling** (all MLKit/react-native-image-colors, offline) from a captured frame. Deeper GPU pixel analysis (edge/motion/stacking) is Phase 6. |
 | **Library** | ✅ Works | Local-first grid of **photos + videos**, fullscreen photo viewer, **photo editor** (rotate / flip / crop 1:1 → saves a non-destructive copy, via expo-image-manipulator), **video player**, **timelapse playback** (8/12/24 fps), **share**, save-to-Photos, delete. |
 | **Studio** | ✅ Works | Photo layer **compositor**: pick a base photo, add **text** + **sticker** layers, and cut out a **real GPU chroma key** (green/blue screen → transparent PNG, an SkSL shader run on-device via react-native-skia) as a draggable layer over a different base. Drag / scale / rotate / opacity, bring-to-front, **flatten & export** to Library. |
-| **Editor** | ✅ Works | **Video** editor: pick a base video, **import your own transparent PNG** (or add text), then **keyframe** its position/scale/rotation/opacity over the timeline — scrub, drag, "set keyframe here," and it interpolates and plays back live, moving across the video in real time. **Export baked MP4** is now real too: a native MediaCodec decode → GLES composite → MediaCodec encode pipeline re-encodes the video with every overlay drawn at its interpolated position, frame-accurately, audio copied through untouched. |
+| **Editor** | ✅ Works | **Video** editor: pick a base video, **import your own transparent PNG** (or add text, or a **green-screen clip**), then **keyframe** its position/scale/rotation/opacity over the timeline — scrub, drag, "set keyframe here," and it interpolates and plays back live, moving across the video in real time. **Export baked MP4** re-encodes for real: a native MediaCodec decode → GLES composite → MediaCodec encode pipeline draws every overlay at its interpolated position, chroma-keys green-screen clips per frame with their own decoder, and writes a new MP4, audio copied through untouched. |
 | **Attachments** | ✅ Works | **Device & module inspector**: model / OS / memory (expo-device), detected camera resolutions, **real Camera2 sensor characteristics** per lens (focal lengths, apertures, ISO range, exposure range, sensor size — read-only, via a small local native module), live **sensor scan** (accelerometer / gyro / magnetometer / barometer), and an honest "no external modules detected". USB-C thermal/IR/UV & BLE shutters plug in via the native module (Phase 7). |
 | **Tools** | ✅ Works | **Unit converter** (length, volume, weight, temperature — cm↔in↔ft↔mi, gal↔L↔cups, etc.), and the allocated spot for **NeRF Measure** (premium, planned) — a NeRF/photogrammetry room-scan → AR measurement feature. |
 | **Settings** | ✅ Works | Full **customization hub** — see below — plus honest capability map, privacy, storage usage, reset. |
@@ -95,8 +95,9 @@ app/
 
 Software cannot make a phone sensor see IR/UV/thermal wavelengths it physically rejects — those
 need attachments. Manual ISO/shutter/RAW capture still needs native code and is staged, not faked.
-Green-screen compositing (Studio), screen recording (Screen), and frame-accurate video export
-(Editor) are all real, shipped native modules — not placeholders. Screen recording uses Android's
+Green-screen compositing — both photo cutouts (Studio) and per-frame video keying baked into an
+export (Editor) — plus screen recording (Screen) and frame-accurate video export are all real,
+shipped native modules — not placeholders. Screen recording uses Android's
 own system consent dialog and a persistent notification/indicator the whole time it runs; it can't
 be started or hidden without that user-visible OS-level consent. The video export pipeline is
 freshly built hand-written MediaCodec/GLES code with no automated on-device test coverage yet

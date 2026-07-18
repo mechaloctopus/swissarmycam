@@ -2,11 +2,15 @@ import { requireNativeModule } from "expo-modules-core";
 
 export type ExportKeyframe = { t: number; x: number; y: number; scale: number; rotation: number; opacity: number };
 export type ExportLayer = {
-  kind: "image" | "text";
+  kind: "image" | "text" | "video";
   uri?: string | null;
   text?: string | null;
   color: string;
   keyframes: ExportKeyframe[];
+  /** "video" layers only — chroma key params for compositing a green/blue-screen clip. */
+  keyColor?: [number, number, number];
+  threshold?: number;
+  smoothing?: number;
 };
 
 type NativeVideoExporterModule = {
@@ -60,6 +64,9 @@ export async function exportOverlaidVideo(
       text: l.text ?? null,
       color: l.color,
       keyframes: l.keyframes,
+      keyColor: l.keyColor ?? null,
+      threshold: l.threshold ?? null,
+      smoothing: l.smoothing ?? null,
     }))
   );
   return mod.exportVideo(videoUri, outputPath, layersJson, Math.round(canvasWidth), Math.round(canvasHeight));
