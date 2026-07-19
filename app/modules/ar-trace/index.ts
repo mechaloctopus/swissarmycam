@@ -1,5 +1,7 @@
 import { requireNativeModule, requireNativeViewManager } from "expo-modules-core";
+import { createElement, useEffect } from "react";
 import type { ComponentType } from "react";
+import { View } from "react-native";
 import type { StyleProp, ViewStyle } from "react-native";
 
 type NativeArTraceModule = {
@@ -86,10 +88,32 @@ export type ArTraceViewProps = {
   onArError?: (e: { nativeEvent: { message: string } }) => void;
 };
 
+// Resolved lazily (on first render) rather than at module-load time — this is
+// the first native View component in this codebase, and a failure to resolve
+// it must not be able to crash the whole JS bundle before anything renders.
+let resolvedNativeView: ComponentType<any> | null | undefined;
+function resolveNativeView(): ComponentType<any> | null {
+  if (resolvedNativeView !== undefined) return resolvedNativeView;
+  try {
+    resolvedNativeView = requireNativeViewManager("ArTrace");
+  } catch {
+    resolvedNativeView = null;
+  }
+  return resolvedNativeView;
+}
+
 /**
  * Native ARCore view: camera background + a world-anchored overlay image.
  * Tap-to-place is driven by props (placeAnchorX/Y + placeAnchorTrigger)
  * rather than native touch handling, so JS gesture code (pan for offset,
  * pinch for scale/rotation) stays free to own the touch surface.
  */
-export const ArTraceView: ComponentType<ArTraceViewProps> = requireNativeViewManager("ArTrace");
+export const ArTraceView: ComponentType<ArTraceViewProps> = (props: ArTraceViewProps) => {
+  const Native = resolveNativeView();
+  useEffect(() => {
+    if (!Native) props.onArError?.({ nativeEvent: { message: "AR view could not be created on this build" } });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [Native]);
+  if (!Native) return createElement(View, { style: props.style });
+  return createElement(Native, props);
+};
