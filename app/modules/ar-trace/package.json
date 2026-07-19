@@ -1,0 +1,7 @@
+{
+  "name": "ar-trace",
+  "version": "1.0.0",
+  "description": "Local Expo module: ARCore surface-locked trace/mural overlay, camera-only zoom (Lensii).",
+  "main": "index.ts",
+  "private": true
+}

@@ -28,6 +28,7 @@ Download `lensii.apk` on your phone and open it (allow "install unknown apps" if
 | **Timelapse** | ✅ Works | Intervalometer (1–60 s), live frame counter, frames saved as a set and **played back** in Library. Frame→MP4 stitching is Phase 3 (native). |
 | **Clay** | ✅ Works | **Claymation / stop-motion studio**: shoot one frame at a time with an **onion-skin guide** — the last frame renders semi-transparent over the live viewfinder so you can see exactly how far to nudge the subject. Undo last frame, adjust onion opacity, then **bake the set into a real MP4** at 8/12/24fps via a native image-sequence encoder (reuses the video-exporter module's EGL/encoder pipeline — no decoder needed for this one). |
 | **Scan** | ✅ Works | **NeRF Measure, phase one**: guided multi-angle overlapping photo capture of a room or object, saved as a set. The real, on-device half of the feature — reconstructing a scan into a 3D model and overlaying AR measurements needs cloud compute (see Tools). |
+| **Trace** | ✅ Works | **AR surface-locked trace / mural projection**: tap a real-world surface to drop an **ARCore** anchor, import a reference image, and it renders projected onto that surface — the lock comes from ARCore's own world-tracking (SLAM), not app math, so it's meant to hold steady as you move around rather than drift. Adjust opacity/size/rotation and nudge position within the lock; a separate **digital camera zoom** magnifies the view for detail work without ever touching the anchor. A "lock adjust" toggle freezes the controls once you're happy. Needs a Google-certified ARCore device; the app checks and offers to install Google Play Services for AR if it's missing. |
 | **Lab** | ✅ Works | Live viewfinder with real overlay guides + look tints, **plus on-device visual intelligence**: colour-palette analysis, **OCR text extraction**, and **scene/object labeling** (all MLKit/react-native-image-colors, offline) from a captured frame. Deeper GPU pixel analysis (edge/motion/stacking) is Phase 6. |
 | **Library** | ✅ Works | Local-first grid of **photos + videos**, fullscreen photo viewer, **photo editor** (rotate / flip / crop 1:1 → saves a non-destructive copy, via expo-image-manipulator), **video player**, **timelapse playback** (8/12/24 fps), **share**, save-to-Photos, delete. |
 | **Studio** | ✅ Works | Photo layer **compositor**: pick a base photo, add **text** + **sticker** layers, and cut out a **real GPU chroma key** (green/blue screen → transparent PNG, an SkSL shader run on-device via react-native-skia) as a draggable layer over a different base. Drag / scale / rotate / opacity, bring-to-front, **flatten & export** to Library. |
@@ -105,4 +106,9 @@ be started or hidden without that user-visible OS-level consent. The video expor
 freshly built hand-written MediaCodec/GLES code with no automated on-device test coverage yet
 (this environment has no Android SDK/emulator to run it against — only to compile it) — treat an
 early export as worth a visual check, the same way you'd sanity-check any brand-new capture path.
+The **AR Trace** module carries the same caveat, more so: it's real ARCore integration (hand-written
+camera-background + anchor-relative overlay rendering, not a mock), but nothing in this environment
+can validate that a lock actually holds without drifting — that's SLAM tracking quality, which only
+shows up on a real device in a real room. CI proves it compiles; only trying it on your phone proves
+it tracks.
 See the in-app **Settings → Capability map**.
