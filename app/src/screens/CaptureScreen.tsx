@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, Pressable, Animated, ActivityIndicator } from "
 import { CameraView, CameraType, CameraMode, useMicrophonePermissions } from "expo-camera";
 import { Image } from "expo-image";
 import * as Haptics from "expo-haptics";
+import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
 import { C, F } from "../theme";
 import { Mono } from "../components/ui";
 import { Slider } from "../components/controls";
@@ -15,6 +16,7 @@ import { useSettings, FlashMode } from "../settings";
 const FLASH_CYCLE: FlashMode[] = ["off", "auto", "on"];
 const FLASH_GLYPH: Record<string, string> = { off: "⚡ off", auto: "⚡ auto", on: "⚡ on" };
 const TIMERS = [0, 3, 10];
+const UNLOCK_HOLD_MS = 1200;
 
 // Approximate lens stops. On devices whose camera exposes an ultra-wide through
 // the zoom range (e.g. Pixel 9 Pro), zoom 0 reaches ~0.5×. Values are perceptual
@@ -42,10 +44,48 @@ export default function CaptureScreen({ focused }: { focused: boolean }) {
   const [countdown, setCountdown] = useState(0);
   const [last, setLast] = useState<MediaItem | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [locked, setLocked] = useState(false);
 
   const flashAnim = useRef(new Animated.Value(0)).current;
+  const unlockAnim = useRef(new Animated.Value(0)).current;
   const elapsedTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const unlockTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sizesFetched = useRef(false);
+
+  // Underwater / record lock: once engaged, every control except the
+  // hold-to-unlock button ignores touch — a stray droplet or water pressure
+  // on the screen can't stop recording, flip the camera, or change modes.
+  useEffect(() => {
+    if (recording && settings.underwaterLock) setLocked(true);
+    if (!recording) setLocked(false);
+  }, [recording, settings.underwaterLock]);
+
+  // Keep the screen awake for the whole recording — a locked screen mid-dive
+  // is as bad as an accidental stop-touch.
+  useEffect(() => {
+    if (recording) {
+      activateKeepAwakeAsync("lensii-recording").catch(() => {});
+      return () => {
+        deactivateKeepAwake("lensii-recording").catch(() => {});
+      };
+    }
+  }, [recording]);
+
+  const beginUnlockHold = useCallback(() => {
+    unlockAnim.setValue(0);
+    Animated.timing(unlockAnim, { toValue: 1, duration: UNLOCK_HOLD_MS, useNativeDriver: false }).start();
+    unlockTimer.current = setTimeout(() => {
+      setLocked(false);
+      unlockAnim.setValue(0);
+      if (settings.haptics) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }, UNLOCK_HOLD_MS);
+  }, [unlockAnim, settings.haptics]);
+
+  const cancelUnlockHold = useCallback(() => {
+    if (unlockTimer.current) clearTimeout(unlockTimer.current);
+    unlockTimer.current = null;
+    Animated.timing(unlockAnim, { toValue: 0, duration: 150, useNativeDriver: false }).start();
+  }, [unlockAnim]);
 
   useEffect(() => {
     listMedia().then((m) => setLast(m[0] ?? null));
@@ -62,6 +102,10 @@ export default function CaptureScreen({ focused }: { focused: boolean }) {
   useEffect(() => {
     if (!focused && recording) camRef.current?.stopRecording();
   }, [focused, recording]);
+
+  useEffect(() => () => {
+    if (unlockTimer.current) clearTimeout(unlockTimer.current);
+  }, []);
 
   const showToast = useCallback((m: string) => {
     setToast(m);
@@ -186,85 +230,121 @@ export default function CaptureScreen({ focused }: { focused: boolean }) {
 
       <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: "#fff", opacity: flashAnim }]} />
 
-      {/* top readout */}
-      <View style={styles.top}>
-        <View style={styles.readPill}>
-          <View style={[styles.recDot, { backgroundColor: recording ? C.red : C.inkMute }]} />
-          <Mono color={C.ink} size={11}>{recording ? "REC " + mmss(elapsed) : mode === "video" ? "VIDEO" : "PHOTO"}</Mono>
-        </View>
-        <Mono color={C.inkSoft} size={11}>{resLabel} · {settings.micEnabled ? "MIC" : "MUTE"}</Mono>
-        {mode === "picture" ? (
-          <Pressable onPress={() => update({ flashDefault: FLASH_CYCLE[(FLASH_CYCLE.indexOf(settings.flashDefault) + 1) % 3] })} style={styles.readPill}>
-            <Mono color={settings.flashDefault === "off" ? C.inkMute : C.red} size={11}>{FLASH_GLYPH[settings.flashDefault]}</Mono>
-          </Pressable>
-        ) : (
-          <Pressable onPress={() => setTorch((t) => !t)} style={styles.readPill}>
-            <Mono color={torch ? C.red : C.inkMute} size={11}>{torch ? "TORCH ON" : "TORCH"}</Mono>
-          </Pressable>
-        )}
-      </View>
-
-      {/* lens stops */}
-      <View style={styles.stops}>
-        {STOPS.map((s) => {
-          const on = activeStop?.label === s.label;
-          return (
-            <Pressable key={s.label} onPress={() => setZoom(s.z)} style={[styles.stop, on && styles.stopOn]}>
-              <Text style={{ color: on ? "#fff" : C.inkSoft, fontFamily: F.mono, fontSize: 12 }}>{s.label}</Text>
+      {/* Everything below is dead to touch while locked — only the unlock control (rendered
+          outside this wrapper) stays live, so a wet screen can't stop recording or change modes. */}
+      <View pointerEvents={locked ? "none" : "box-none"} style={StyleSheet.absoluteFill}>
+        {/* top readout */}
+        <View style={styles.top}>
+          <View style={styles.readPill}>
+            <View style={[styles.recDot, { backgroundColor: recording ? C.red : C.inkMute }]} />
+            <Mono color={C.ink} size={11}>{recording ? "REC " + mmss(elapsed) : mode === "video" ? "VIDEO" : "PHOTO"}</Mono>
+          </View>
+          <Mono color={C.inkSoft} size={11}>{resLabel} · {settings.micEnabled ? "MIC" : "MUTE"}</Mono>
+          {mode === "picture" ? (
+            <Pressable onPress={() => update({ flashDefault: FLASH_CYCLE[(FLASH_CYCLE.indexOf(settings.flashDefault) + 1) % 3] })} style={styles.readPill}>
+              <Mono color={settings.flashDefault === "off" ? C.inkMute : C.red} size={11}>{FLASH_GLYPH[settings.flashDefault]}</Mono>
             </Pressable>
-          );
-        })}
-      </View>
-
-      {/* fine zoom slider */}
-      <View style={styles.zoomWrap}>
-        <Slider value={zoom} min={0} max={1} step={0.01} onChange={setZoom} width={210} />
-      </View>
-
-      {/* tool drawer */}
-      <View style={styles.tools}>
-        <MiniTool glyph="#" label={settings.gridType} on={settings.grid} onPress={() => update({ grid: !settings.grid })} />
-        <MiniTool glyph="⊹" label="Level" on={settings.level} onPress={() => update({ level: !settings.level })} />
-        <MiniTool glyph="✛" label="Reticle" on={settings.reticle} onPress={() => update({ reticle: !settings.reticle })} />
-        <MiniTool glyph="⧗" label={`Timer ${settings.timerDefault}s`} on={settings.timerDefault > 0} onPress={() => update({ timerDefault: TIMERS[(TIMERS.indexOf(settings.timerDefault) + 1) % TIMERS.length] })} />
-      </View>
-
-      {/* mode switch */}
-      <View style={styles.modeRow}>
-        <Pressable onPress={() => !recording && setMode("picture")} style={[styles.modeItem, mode === "picture" && styles.modeItemOn]}>
-          <Text style={[styles.modeText, mode === "picture" && { color: C.red }]}>PHOTO</Text>
-        </Pressable>
-        <Pressable onPress={() => !recording && setMode("video")} style={[styles.modeItem, mode === "video" && styles.modeItemOn]}>
-          <Text style={[styles.modeText, mode === "video" && { color: C.red }]}>VIDEO</Text>
-        </Pressable>
-      </View>
-
-      {/* shutter row */}
-      <View style={styles.bottom}>
-        <Pressable onPress={() => showToast("Open the Library tab to view")} style={styles.thumb}>
-          {last?.kind === "photo" ? (
-            <Image source={{ uri: last.uri }} style={styles.thumbImg} contentFit="cover" />
-          ) : last?.kind === "video" ? (
-            <Text style={{ color: C.ink, fontSize: 18 }}>▶</Text>
           ) : (
-            <Text style={{ color: C.inkFaint, fontSize: 20 }}>▦</Text>
+            <Pressable onPress={() => setTorch((t) => !t)} style={styles.readPill}>
+              <Mono color={torch ? C.red : C.inkMute} size={11}>{torch ? "TORCH ON" : "TORCH"}</Mono>
+            </Pressable>
           )}
-        </Pressable>
+        </View>
 
-        {mode === "picture" ? (
-          <Pressable onPress={onShutterPhoto} disabled={busy} style={styles.shutterOuter}>
-            <View style={[styles.shutterInner, busy && { backgroundColor: C.redBright }]}>{busy ? <ActivityIndicator color="#fff" /> : null}</View>
-          </Pressable>
-        ) : (
-          <Pressable onPress={recording ? stopRecording : startRecording} style={styles.shutterOuter}>
-            <View style={recording ? styles.recStop : styles.shutterInner} />
-          </Pressable>
-        )}
+        {/* lens stops */}
+        <View style={styles.stops}>
+          {STOPS.map((s) => {
+            const on = activeStop?.label === s.label;
+            return (
+              <Pressable key={s.label} onPress={() => setZoom(s.z)} style={[styles.stop, on && styles.stopOn]}>
+                <Text style={{ color: on ? "#fff" : C.inkSoft, fontFamily: F.mono, fontSize: 12 }}>{s.label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
 
-        <Pressable onPress={() => !recording && setFacing((f) => (f === "back" ? "front" : "back"))} style={styles.flip}>
-          <Text style={{ color: C.inkSoft, fontSize: 20 }}>⟲</Text>
-        </Pressable>
+        {/* fine zoom slider */}
+        <View style={styles.zoomWrap}>
+          <Slider value={zoom} min={0} max={1} step={0.01} onChange={setZoom} width={210} />
+        </View>
+
+        {/* tool drawer */}
+        <View style={styles.tools}>
+          <MiniTool glyph="#" label={settings.gridType} on={settings.grid} onPress={() => update({ grid: !settings.grid })} />
+          <MiniTool glyph="⊹" label="Level" on={settings.level} onPress={() => update({ level: !settings.level })} />
+          <MiniTool glyph="✛" label="Reticle" on={settings.reticle} onPress={() => update({ reticle: !settings.reticle })} />
+          <MiniTool glyph="⧗" label={`Timer ${settings.timerDefault}s`} on={settings.timerDefault > 0} onPress={() => update({ timerDefault: TIMERS[(TIMERS.indexOf(settings.timerDefault) + 1) % TIMERS.length] })} />
+          <MiniTool glyph="⬥" label="Underwater" on={settings.underwaterLock} onPress={() => update({ underwaterLock: !settings.underwaterLock })} />
+        </View>
+
+        {/* mode switch */}
+        <View style={styles.modeRow}>
+          <Pressable onPress={() => !recording && setMode("picture")} style={[styles.modeItem, mode === "picture" && styles.modeItemOn]}>
+            <Text style={[styles.modeText, mode === "picture" && { color: C.red }]}>PHOTO</Text>
+          </Pressable>
+          <Pressable onPress={() => !recording && setMode("video")} style={[styles.modeItem, mode === "video" && styles.modeItemOn]}>
+            <Text style={[styles.modeText, mode === "video" && { color: C.red }]}>VIDEO</Text>
+          </Pressable>
+        </View>
+
+        {/* shutter row */}
+        <View style={styles.bottom}>
+          <Pressable onPress={() => showToast("Open the Library tab to view")} style={styles.thumb}>
+            {last?.kind === "photo" ? (
+              <Image source={{ uri: last.uri }} style={styles.thumbImg} contentFit="cover" />
+            ) : last?.kind === "video" ? (
+              <Text style={{ color: C.ink, fontSize: 18 }}>▶</Text>
+            ) : (
+              <Text style={{ color: C.inkFaint, fontSize: 20 }}>▦</Text>
+            )}
+          </Pressable>
+
+          {mode === "picture" ? (
+            <Pressable onPress={onShutterPhoto} disabled={busy} style={styles.shutterOuter}>
+              <View style={[styles.shutterInner, busy && { backgroundColor: C.redBright }]}>{busy ? <ActivityIndicator color="#fff" /> : null}</View>
+            </Pressable>
+          ) : (
+            <Pressable onPress={recording ? stopRecording : startRecording} style={styles.shutterOuter}>
+              <View style={recording ? styles.recStop : styles.shutterInner} />
+            </Pressable>
+          )}
+
+          <Pressable onPress={() => !recording && setFacing((f) => (f === "back" ? "front" : "back"))} style={styles.flip}>
+            <Text style={{ color: C.inkSoft, fontSize: 20 }}>⟲</Text>
+          </Pressable>
+        </View>
       </View>
+
+      {/* manual lock engage — live even when not recording, for e.g. locking before descent */}
+      {!locked && (
+        <Pressable onPress={() => setLocked(true)} style={styles.lockBtn}>
+          <Text style={{ fontSize: 16 }}>🔓</Text>
+        </Pressable>
+      )}
+
+      {locked && (
+        <View pointerEvents="box-none" style={styles.lockedWrap}>
+          <View pointerEvents="none" style={styles.lockedBanner}>
+            <Mono color="#fff" size={11}>🔒 LOCKED — touch is disabled while recording</Mono>
+          </View>
+          <Pressable onPressIn={beginUnlockHold} onPressOut={cancelUnlockHold} style={styles.unlockBtn}>
+            <Animated.View
+              style={[
+                styles.unlockFill,
+                {
+                  transform: [
+                    {
+                      scale: unlockAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 1] }),
+                    },
+                  ],
+                },
+              ]}
+            />
+            <Text style={{ fontSize: 20 }}>🔒</Text>
+          </Pressable>
+          <Mono color="rgba(255,255,255,0.8)" size={10} style={{ marginTop: 8 }}>hold 1.2s to unlock</Mono>
+        </View>
+      )}
 
       {countdown > 0 && (
         <View pointerEvents="none" style={styles.countWrap}>
@@ -301,6 +381,11 @@ function MiniTool({ glyph, label, on, onPress }: { glyph: string; label: string;
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#000" },
+  lockBtn: { position: "absolute", top: 12, right: 14, width: 34, height: 34, borderRadius: 17, backgroundColor: "rgba(0,0,0,0.45)", alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: C.lineStrong },
+  lockedWrap: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.15)" },
+  lockedBanner: { position: "absolute", top: 12, left: 14, right: 14, backgroundColor: "rgba(0,0,0,0.55)", borderRadius: 40, paddingVertical: 8, alignItems: "center" },
+  unlockBtn: { width: 84, height: 84, borderRadius: 42, borderWidth: 2, borderColor: "#fff", alignItems: "center", justifyContent: "center", overflow: "hidden" },
+  unlockFill: { position: "absolute", width: 84, height: 84, borderRadius: 42, backgroundColor: C.red },
   top: { position: "absolute", top: 12, left: 14, right: 14, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   readPill: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "rgba(0,0,0,0.45)", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 40 },
   recDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: C.red },

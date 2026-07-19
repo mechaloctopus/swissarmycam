@@ -16,6 +16,7 @@ export type ExportLayer = {
 type NativeVideoExporterModule = {
   isAvailable(): boolean;
   exportVideo(videoPath: string, outputPath: string, layersJson: string, canvasWidth: number, canvasHeight: number): Promise<string>;
+  exportImageSequence(urisJson: string, fps: number, outputPath: string): Promise<string>;
 };
 
 let native: NativeVideoExporterModule | null = null;
@@ -70,4 +71,15 @@ export async function exportOverlaidVideo(
     }))
   );
   return mod.exportVideo(videoUri, outputPath, layersJson, Math.round(canvasWidth), Math.round(canvasHeight));
+}
+
+/**
+ * Bakes a sequence of still images (e.g. a claymation/stop-motion frame set)
+ * into an MP4 at a fixed frame rate — no decode step, just each frame drawn
+ * straight to the encoder. `outputPath` must be a plain filesystem path.
+ */
+export async function exportImageSequence(frameUris: string[], fps: number, outputPath: string): Promise<string> {
+  const mod = getNative();
+  if (!mod) throw new Error("Video export is not available on this build");
+  return mod.exportImageSequence(JSON.stringify(frameUris), Math.round(fps), outputPath);
 }
