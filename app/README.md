@@ -71,6 +71,31 @@ cd android && ./gradlew assembleRelease
 Requires JDK 17 and the Android SDK. CI does exactly this — see
 [`.github/workflows/android.yml`](../.github/workflows/android.yml).
 
+## Firebase Test Lab setup (automated device smoke test)
+
+[`.github/workflows/firebase-test-lab.yml`](../.github/workflows/firebase-test-lab.yml) runs Google's
+automated "Robo" crawler against the latest published APK on a real physical Android phone, looking
+for crashes/ANRs across every screen it can reach. It's a crash-detection safety net, not a
+replacement for hands-on testing — it can't tell you whether AR Trace's tracking lock drifts or
+whether underwater mode actually survives a wet screen; only a person with the phone can check those.
+
+One-time setup (nobody but a project owner with GCP access can do this part):
+
+1. Create a project at [console.firebase.google.com](https://console.firebase.google.com) (the free
+   Spark plan's daily quota is enough for occasional smoke runs; switch to pay-as-you-go Blaze if you
+   want more).
+2. In that project, open **Build → Test Lab** once to enable it.
+3. In the matching [console.cloud.google.com](https://console.cloud.google.com) project, enable the
+   **Cloud Testing API** and **Cloud Tool Results API** (APIs & Services → Library).
+4. Create a service account (IAM & Admin → Service Accounts) with the **Firebase Test Lab Admin**
+   role, then create a JSON key for it (Keys → Add key → JSON) — this downloads a `.json` file.
+5. In the GitHub repo (Settings → Secrets and variables → Actions):
+   - Add repo **secret** `GCP_SA_KEY` — paste the entire contents of that JSON file.
+   - Add repo **variable** `FIREBASE_PROJECT_ID` — the GCP project id (shown in Firebase project
+     settings, looks like `lensii-testing-a1b2c`).
+6. Run the workflow from the Actions tab (`Firebase Test Lab (Robo smoke test)` → Run workflow), or
+   ask Claude to trigger it.
+
 ## Tech
 
 - **Expo SDK 57 · React Native 0.86 · TypeScript**

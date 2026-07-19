@@ -1,0 +1,58 @@
+name: Firebase Test Lab (Robo smoke test)
+
+# Manually-triggered: downloads the currently-published lensii.apk and runs
+# Google's automated "Robo" crawler against it on a real physical Android
+# device via Firebase Test Lab. The crawler taps through every screen it can
+# reach looking for crashes/ANRs/exceptions.
+#
+# What this catches: crashes, ANRs, obvious exceptions in the UI flow.
+# What it does NOT catch: whether AR Trace's world-tracked lock actually
+# holds without drifting, or anything about underwater use — both need a
+# human holding a real phone, not an automated crawler.
+#
+# One-time setup required (see app/README.md "Firebase Test Lab setup"):
+#   - repo secret   GCP_SA_KEY          — full JSON key of a GCP service account
+#                                          with the Firebase Test Lab Admin role
+#   - repo variable FIREBASE_PROJECT_ID — the GCP/Firebase project id
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: firebase-test-lab
+  cancel-in-progress: false
+
+jobs:
+  robo-test:
+    name: Robo crawl on a physical device
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download latest published APK
+        run: curl -fL -o lensii.apk "https://github.com/${{ github.repository }}/releases/download/android-latest/lensii.apk"
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ vars.FIREBASE_PROJECT_ID }}
+
+      - name: Run Robo test on Firebase Test Lab
+        run: |
+          gcloud firebase test android run \
+            --type robo \
+            --app lensii.apk \
+            --device model=oriole,version=33,locale=en,orientation=portrait \
+            --timeout 5m \
+            --format=json | tee results.json
+
+      - name: Upload results summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: firebase-test-lab-results
+          path: results.json
+          if-no-files-found: warn
