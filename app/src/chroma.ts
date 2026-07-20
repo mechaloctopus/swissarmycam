@@ -1,4 +1,9 @@
-import { Skia, TileMode, FilterMode, MipmapMode, ImageFormat } from "@shopify/react-native-skia";
+// Imported from the "skia" subpath, not the package's main barrel — the
+// barrel also re-exports Canvas/video-hooks internals that unconditionally
+// touch an optional react-native-reanimated proxy at module-load time (even
+// though we never render a <Canvas> or use Skia video here), which throws
+// and crashes the whole app on launch since reanimated isn't installed.
+import { Skia, TileMode, FilterMode, MipmapMode, ImageFormat } from "@shopify/react-native-skia/src/skia";
 import * as FileSystem from "expo-file-system/legacy";
 
 /**
