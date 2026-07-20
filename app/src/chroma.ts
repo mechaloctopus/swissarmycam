@@ -3,6 +3,11 @@
 // touch an optional react-native-reanimated proxy at module-load time (even
 // though we never render a <Canvas> or use Skia video here), which throws
 // and crashes the whole app on launch since reanimated isn't installed.
+// NativeSetup is the barrel's actual first import (it installs the native
+// JSI bridge, global.SkiaApi) — it has no reanimated dependency of its own,
+// so it must be imported explicitly here since the narrower "./skia" subpath
+// below doesn't pull it in itself.
+import "@shopify/react-native-skia/src/skia/NativeSetup";
 import { Skia, TileMode, FilterMode, MipmapMode, ImageFormat } from "@shopify/react-native-skia/src/skia";
 import * as FileSystem from "expo-file-system/legacy";
 
