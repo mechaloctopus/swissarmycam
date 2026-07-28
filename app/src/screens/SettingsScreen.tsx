@@ -31,6 +31,9 @@ const CAPS: { name: string; level: string; tone: string }[] = [
   { name: "AR surface-locked trace / mural projection (ARCore)", level: "Possible now", tone: C.go },
   { name: "In-app purchases (Google Play Billing)", level: "Possible now", tone: C.go },
   { name: "NeRF scan capture from an imported video", level: "Possible now", tone: C.go },
+  { name: "Microphone hardware inventory (real, per-device)", level: "Possible now", tone: C.go },
+  { name: "Screen recording audio source (standard / camcorder / raw-no-AI)", level: "Possible now", tone: C.go },
+  { name: "Capture video mic-array selection / forced-off noise suppression", level: "Not exposed by expo-camera", tone: C.native },
   { name: "Manual ISO / shutter / RAW capture", level: "Requires native code", tone: C.native },
   { name: "Input mic-gain / audio DSP", level: "Requires native code", tone: C.native },
   { name: "IR / thermal / UV", level: "Requires attachment", tone: C.attach },
@@ -205,6 +208,14 @@ export default function SettingsScreen({ focused }: { focused: boolean }) {
         </Row>
         <Row title="Feedback volume" hint={`${settings.shutterVolume}% · shutter & UI cues`}>
           <Slider value={settings.shutterVolume} min={0} max={100} step={10} onChange={(v) => update({ shutterVolume: v })} width={130} />
+        </Row>
+        <Row title="Screen recording audio" hint="Applies to Screen only — Capture's video pipeline has no audio-source control to apply this to (see Capability map).">
+          <Segmented
+            options={["standard", "camcorder", "raw"] as const}
+            value={settings.screenAudioSource}
+            onChange={(v) => update({ screenAudioSource: v })}
+            format={(v) => (v === "standard" ? "Standard" : v === "camcorder" ? "Camera mic" : "Raw · no AI")}
+          />
         </Row>
       </Section>
 

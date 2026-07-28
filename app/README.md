@@ -37,7 +37,7 @@ where you'd start the trial or enter a code) — see "Selling on Google Play" be
 | **Library** | ✅ Works | Local-first grid of **photos + videos**, fullscreen photo viewer, **photo editor** (rotate / flip / crop 1:1 → saves a non-destructive copy, via expo-image-manipulator), **video player**, **timelapse playback** (8/12/24 fps), **share**, save-to-Photos, delete. |
 | **Studio** | ✅ Works | Photo layer **compositor**: pick a base photo, add **text** + **sticker** layers, and cut out a **real GPU chroma key** (green/blue screen → transparent PNG, an SkSL shader run on-device via react-native-skia) as a draggable layer over a different base. Drag / scale / rotate / opacity, bring-to-front, **flatten & export** to Library. |
 | **Editor** | ✅ Works | **Video** editor: pick a base video, **import your own transparent PNG** (or add text, or a **green-screen clip**), then **keyframe** its position/scale/rotation/opacity over the timeline — scrub, drag, "set keyframe here," and it interpolates and plays back live, moving across the video in real time. **Export baked MP4** re-encodes for real: a native MediaCodec decode → GLES composite → MediaCodec encode pipeline draws every overlay at its interpolated position, chroma-keys green-screen clips per frame with their own decoder, and writes a new MP4, audio copied through untouched. |
-| **Attachments** | ✅ Works | **Device & module inspector**: model / OS / memory (expo-device), detected camera resolutions, **real Camera2 sensor characteristics** per lens (focal lengths, apertures, ISO range, exposure range, sensor size — read-only, via a small local native module), live **sensor scan** (accelerometer / gyro / magnetometer / barometer), and an honest "no external modules detected". USB-C thermal/IR/UV & BLE shutters plug in via the native module (Phase 7). |
+| **Attachments** | ✅ Works | **Device & module inspector**: model / OS / memory (expo-device), detected camera resolutions, **real Camera2 sensor characteristics** per lens (focal lengths, apertures, ISO range, exposure range, sensor size), **real microphone hardware inventory** (type, location, directionality, position — via `AudioManager.getMicrophones()`, honestly reflecting what each device actually reports rather than assuming a mic array exists), live **sensor scan** (accelerometer / gyro / magnetometer / barometer), and an honest "no external modules detected". USB-C thermal/IR/UV & BLE shutters plug in via the native module (Phase 7). |
 | **Tools** | ✅ Works | **Unit converter** (length, volume, weight, temperature — cm↔in↔ft↔mi, gal↔L↔cups, etc.), and the **NeRF Measure** card — capture is real (see Scan tab); reconstruction into a 3D model + AR measurement overlay is honestly staged as needing cloud compute, not faked. |
 | **Settings** | ✅ Works | Full **customization hub** — see below — plus honest capability map, privacy, storage usage, reset. |
 | **Screen** | ✅ Works | **Real system-wide screen recording** via Android's MediaProjection: standard OS consent flow, foreground-service-backed capture (with the required Android 14+ persistent notification), optional mic audio, saves straight to Library. Facecam bubble, game mode, and export presets are next. |
@@ -45,7 +45,14 @@ where you'd start the trial or enter a code) — see "Selling on Google Play" be
 ### Everything is customizable (Settings — persisted across launches)
 - **Photo:** aspect ratio (4:3 / 16:9 / 1:1), **picture size** (real device-detected resolutions), JPEG quality.
 - **Video:** resolution (2160p / 1080p / 720p / 480p), bitrate, max duration.
-- **Audio:** microphone on/off, **mic gain**, feedback volume. *(Input mic-gain is stored now and applies with the native audio pipeline — Phase 5; mic on/off is live today.)*
+- **Audio:** microphone on/off, **mic gain**, feedback volume, and (Screen recording only) an
+  **audio source** choice — Standard, Camera-tuned, or Raw/no-AI-processing (`AudioSource.UNPROCESSED`,
+  Android's own source-level way to skip AGC/noise suppression, with a real on-device fallback
+  cascade to `VOICE_RECOGNITION` then `MIC` if a device doesn't support it). This only applies to
+  Screen recording — Capture's video pipeline (`expo-camera`/CameraX) has no audio-source
+  configuration surface at all to apply it to; see Settings → Capability map for the honest split.
+  *(Input mic-gain is stored now and applies with the native audio pipeline — Phase 5; mic on/off
+  is live today.)*
 - **Capture defaults:** flash, grid + grid type, level, reticle, self-timer, auto-save to Photos, haptics.
 - **Timelapse:** default interval, output frame rate.
 - **Storage:** usage readout + clear all in-app media. Plus reset-to-defaults.

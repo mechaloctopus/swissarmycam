@@ -9,6 +9,7 @@ export type FlashMode = "off" | "on" | "auto";
 export type Ratio = "4:3" | "16:9" | "1:1";
 export type VideoQuality = "2160p" | "1080p" | "720p" | "480p";
 export type GridType = "thirds" | "golden" | "square";
+export type AudioSourcePref = "standard" | "camcorder" | "raw";
 
 export type Settings = {
   // Photo
@@ -24,6 +25,9 @@ export type Settings = {
   // Audio
   micEnabled: boolean;
   micGain: number; // 0–100 (stored; input-gain applies with the native audio pipeline)
+  // Screen recording only — expo-camera's video pipeline (Capture tab) has
+  // no audio-source configuration surface to apply this to; see README.
+  screenAudioSource: AudioSourcePref;
 
   // Capture defaults
   flashDefault: FlashMode;
@@ -53,6 +57,7 @@ export const DEFAULTS: Settings = {
 
   micEnabled: true,
   micGain: 70,
+  screenAudioSource: "standard",
 
   flashDefault: "off",
   grid: true,

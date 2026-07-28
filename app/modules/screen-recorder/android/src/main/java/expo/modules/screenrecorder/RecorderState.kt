@@ -36,6 +36,23 @@ object RecorderState {
   var pendingResultData: Intent? = null
   var pendingOutputPath: String? = null
   var pendingWithMic: Boolean = false
+  /** "standard" | "camcorder" | "raw" — see mapAudioSources() below. */
+  var pendingAudioSource: String = "standard"
+
+  /**
+   * "raw" asks the audio HAL itself to skip its noise-suppression/AGC chain
+   * (Android's own documented way to get unprocessed audio — a source-level
+   * request, not an app-side effect toggle bolted on afterwards) via
+   * UNPROCESSED, falling back to VOICE_RECOGNITION (also AGC/NS-free) if a
+   * device doesn't support UNPROCESSED, and finally to MIC if neither
+   * source is accepted. "camcorder" prefers the camera-tuned mic input.
+   * Every fallback is attempted for real at prepare() time, not assumed.
+   */
+  private fun mapAudioSources(pref: String): List<Int> = when (pref) {
+    "raw" -> listOf(MediaRecorder.AudioSource.UNPROCESSED, MediaRecorder.AudioSource.VOICE_RECOGNITION, MediaRecorder.AudioSource.MIC)
+    "camcorder" -> listOf(MediaRecorder.AudioSource.CAMCORDER, MediaRecorder.AudioSource.MIC)
+    else -> listOf(MediaRecorder.AudioSource.MIC)
+  }
 
   private val projectionCallback = object : MediaProjection.Callback() {
     override fun onStop() {
@@ -72,22 +89,36 @@ object RecorderState {
         val height = metrics.heightPixels
         val density = metrics.densityDpi
 
-        @Suppress("DEPRECATION")
-        val recorder = MediaRecorder()
-        if (pendingWithMic) {
-          recorder.setAudioSource(MediaRecorder.AudioSource.MIC)
+        // -1 = no audio source to try at all (mic disabled entirely).
+        val audioSourcesToTry = if (pendingWithMic) mapAudioSources(pendingAudioSource) else listOf(-1)
+        var recorder: MediaRecorder? = null
+        var lastError: Exception? = null
+        for (audioSource in audioSourcesToTry) {
+          @Suppress("DEPRECATION")
+          val r = MediaRecorder()
+          try {
+            if (pendingWithMic && audioSource >= 0) {
+              r.setAudioSource(audioSource)
+            }
+            r.setVideoSource(MediaRecorder.VideoSource.SURFACE)
+            r.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+            if (pendingWithMic) {
+              r.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+            }
+            r.setVideoEncoder(MediaRecorder.VideoEncoder.H264)
+            r.setVideoSize(width, height)
+            r.setVideoFrameRate(30)
+            r.setVideoEncodingBitRate(8_000_000)
+            r.setOutputFile(pendingOutputPath)
+            r.prepare()
+            recorder = r
+            break
+          } catch (e: Exception) {
+            lastError = e
+            try { r.release() } catch (e2: Exception) { }
+          }
         }
-        recorder.setVideoSource(MediaRecorder.VideoSource.SURFACE)
-        recorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-        if (pendingWithMic) {
-          recorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-        }
-        recorder.setVideoEncoder(MediaRecorder.VideoEncoder.H264)
-        recorder.setVideoSize(width, height)
-        recorder.setVideoFrameRate(30)
-        recorder.setVideoEncodingBitRate(8_000_000)
-        recorder.setOutputFile(pendingOutputPath)
-        recorder.prepare()
+        if (recorder == null) throw lastError ?: IllegalStateException("Could not prepare MediaRecorder")
 
         val surface: Surface = recorder.surface
         val display = projection.createVirtualDisplay(

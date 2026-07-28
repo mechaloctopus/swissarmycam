@@ -45,7 +45,7 @@ export default function ScreenRecordScreen() {
       }
       const { uri, path } = await newVideoOutputPath();
       outputUriRef.current = uri;
-      const ok = await startRecording(path, withMic);
+      const ok = await startRecording(path, withMic, settings.screenAudioSource);
       if (ok) {
         setRecording(true);
         setElapsed(0);

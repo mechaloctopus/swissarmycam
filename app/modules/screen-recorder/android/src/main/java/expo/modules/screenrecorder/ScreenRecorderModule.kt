@@ -19,6 +19,7 @@ class ScreenRecorderModule : Module() {
   private var pendingPromise: Promise? = null
   private var pendingOutputPath: String? = null
   private var pendingWithMic: Boolean = false
+  private var pendingAudioSource: String = "standard"
 
   private val projectionManager: MediaProjectionManager
     get() = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
@@ -32,7 +33,7 @@ class ScreenRecorderModule : Module() {
 
     // Shows the system's screen-share consent dialog, then — once the user
     // approves — starts the foreground service that owns the actual capture.
-    AsyncFunction("startRecording") { outputPath: String, withMic: Boolean, promise: Promise ->
+    AsyncFunction("startRecording") { outputPath: String, withMic: Boolean, audioSource: String, promise: Promise ->
       if (RecorderState.isRecording) {
         promise.resolve(false)
         return@AsyncFunction
@@ -40,6 +41,7 @@ class ScreenRecorderModule : Module() {
       pendingPromise = promise
       pendingOutputPath = outputPath
       pendingWithMic = withMic
+      pendingAudioSource = audioSource
       val intent = projectionManager.createScreenCaptureIntent()
       appContext.throwingActivity.startActivityForResult(intent, CAPTURE_REQUEST_CODE)
     }
@@ -63,6 +65,7 @@ class ScreenRecorderModule : Module() {
       RecorderState.pendingResultData = data
       RecorderState.pendingOutputPath = pendingOutputPath
       RecorderState.pendingWithMic = pendingWithMic
+      RecorderState.pendingAudioSource = pendingAudioSource
 
       val serviceIntent = Intent(context, ScreenRecordService::class.java)
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
