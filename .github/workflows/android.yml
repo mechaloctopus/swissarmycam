@@ -70,7 +70,6 @@ jobs:
       # unconfigured and the release build falls back to debug signing,
       # exactly as it always has — nothing below changes that path.
       - name: Decode release keystore (if configured)
-        if: ${{ secrets.LENSII_RELEASE_KEYSTORE_BASE64 != '' }}
         working-directory: app
         env:
           KEYSTORE_B64: ${{ secrets.LENSII_RELEASE_KEYSTORE_BASE64 }}
@@ -78,6 +77,10 @@ jobs:
           KEY_ALIAS: ${{ secrets.LENSII_RELEASE_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.LENSII_RELEASE_KEY_PASSWORD }}
         run: |
+          if [ -z "$KEYSTORE_B64" ]; then
+            echo "No release keystore secret configured — release build stays debug-signed."
+            exit 0
+          fi
           echo "$KEYSTORE_B64" | base64 -d > release.keystore
           echo "LENSII_RELEASE_KEYSTORE=$GITHUB_WORKSPACE/app/release.keystore" >> "$GITHUB_ENV"
           echo "LENSII_RELEASE_STORE_PASSWORD=$STORE_PASSWORD" >> "$GITHUB_ENV"
