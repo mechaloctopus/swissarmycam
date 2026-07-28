@@ -17,7 +17,7 @@ everything here is genuinely "No data collected":
 | --- | --- | --- |
 | Location | No data collected | Never requested, never read. |
 | Personal info (name, email, etc.) | No data collected | No accounts, no sign-in, anywhere. |
-| Financial info | No data collected | Purchases are handled entirely by Google Play Billing — Lensii never receives payment details, only a purchase confirmation token. Check Play Console's current help text for whether Play Billing purchases need a separate declaration; guidance has changed over time and this doc can't be more current than that page. |
+| Financial info | No data collected | Subscription purchases are handled entirely by Google Play Billing — Lensii never receives payment details, only a purchase/subscription-state confirmation. Check Play Console's current help text for whether Play Billing subscriptions need a separate declaration; guidance has changed over time and this doc can't be more current than that page. |
 | Photos and videos | No data collected | Captured/stored locally in the app's private storage. Nothing is transmitted unless the user explicitly taps "Save to Photos" (a local OS action, not a transmission to Lensii or anyone else) or uses the OS share sheet to send a file to an app of their own choosing. |
 | Audio files | No data collected | Same as above — mic input is written to local video files only. |
 | App activity, App info & performance, Device/other IDs | No data collected | No analytics SDK, no crash reporting SDK, no ad SDK. |
@@ -35,8 +35,12 @@ uninstalling the app or using Settings → "Clear all in-app media" removes ever
 - **User-generated content shared with other users:** No — there's no social feature, no public
   feed, no way for one Lensii user to see another's content. The OS share sheet lets a user send
   a file to another app of their choice, which isn't Lensii hosting or distributing anything.
-- **In-app purchases:** Yes (as of the Play Billing integration) — a one-time, non-consumable
-  unlock, no subscriptions, no loot-box-style randomized purchases.
+- **In-app purchases / subscriptions:** Yes — a single auto-renewing monthly subscription
+  (`lensii_pro_monthly`) with a 7-day free trial, no loot-box-style randomized purchases. Capture
+  and Library are free without any purchase; every other tab needs an active trial, subscription,
+  or a developer-issued access code (see `src/promoCodes.ts`) — Play Console's subscription
+  questionnaire will ask for the free-trial length and cancellation/renewal terms, which the app's
+  Settings screen also states plainly before purchase.
 - **Ads:** No.
 - **User-to-user communication:** No.
 

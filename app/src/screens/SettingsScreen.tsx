@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Linking, Pressable, Alert, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Linking, Pressable, Alert, ActivityIndicator, TextInput } from "react-native";
 import Constants from "expo-constants";
 import { C, F } from "../theme";
 import { Mono } from "../components/ui";
@@ -43,9 +43,24 @@ const PRIVACY = [
   "Trademark & brand under review before launch.",
 ];
 
+// "P7D" -> "7-day", "P1M" -> "monthly", "P1Y" -> "yearly" — the ISO 8601
+// durations Play Billing sends are always one of a handful of shapes for a
+// simple monthly subscription, so this doesn't need to be a general parser.
+function describeBillingPeriod(period: string): string {
+  const match = period.match(/^P(\d+)([DWMY])$/);
+  if (!match) return period;
+  const [, n, unit] = match;
+  const count = Number(n);
+  const names: Record<string, [string, string]> = { D: ["day", "days"], W: ["week", "weeks"], M: ["month", "months"], Y: ["year", "years"] };
+  const [singular, plural] = names[unit] ?? ["period", "periods"];
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
 export default function SettingsScreen({ focused }: { focused: boolean }) {
   const { settings, update, reset } = useSettings();
-  const { pro, product, busy, error, buy, restore, available: billingAvailable } = useEntitlement();
+  const { pro, trial, recurring, busy, error, buy, restore, redeemCode, available: billingAvailable } = useEntitlement();
+  const [codeInput, setCodeInput] = useState("");
+  const [codeMsg, setCodeMsg] = useState<string | null>(null);
   const [sizes, setSizes] = useState<string[]>([]);
   const [bytes, setBytes] = useState(0);
   const [counts, setCounts] = useState({ photos: 0, videos: 0 });
@@ -80,6 +95,13 @@ export default function SettingsScreen({ focused }: { focused: boolean }) {
       { text: "Reset", style: "destructive", onPress: reset },
     ]);
 
+  const submitCode = async () => {
+    if (!codeInput.trim()) return;
+    const ok = await redeemCode(codeInput.trim());
+    setCodeMsg(ok ? "Code accepted — full access unlocked." : "That code isn't valid.");
+    if (ok) setCodeInput("");
+  };
+
   return (
     <ScrollView style={styles.root} contentContainerStyle={{ padding: 18, paddingBottom: 48 }}>
       <View style={styles.brand}>
@@ -91,22 +113,26 @@ export default function SettingsScreen({ focused }: { focused: boolean }) {
       </View>
 
       {/* PRO */}
-      <Section title="Lensii Pro">
+      <Section title="Lensii">
         <Row
-          title={pro ? "You have Lensii Pro" : "Unlock Lensii Pro"}
+          title={pro ? "You have full access" : "Unlock the full app"}
           hint={
             pro
-              ? "Thanks for supporting Lensii."
+              ? "Capture and Library are always free — thanks for unlocking the rest."
               : billingAvailable
-                ? "A one-time purchase — nothing is gated behind it yet."
-                : "Purchases need an Android build with Play Billing linked."
+                ? recurring
+                  ? trial
+                    ? `${describeBillingPeriod(trial.billingPeriod)} free, then ${recurring.price}/${describeBillingPeriod(recurring.billingPeriod).replace(/^1 /, "")}`
+                    : `${recurring.price}/${describeBillingPeriod(recurring.billingPeriod).replace(/^1 /, "")}`
+                  : "Capture and Library are free — everything else needs a subscription."
+                : "Subscriptions need an Android build with Play Billing linked."
           }
         >
           {pro ? (
             <Mono color={C.go} size={12}>✓ Unlocked</Mono>
           ) : billingAvailable ? (
             <Pressable onPress={buy} disabled={busy} style={[styles.proBtn, busy && { opacity: 0.6 }]}>
-              {busy ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.proBtnText}>{product ? `Buy · ${product.price}` : "Buy"}</Text>}
+              {busy ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.proBtnText}>{trial ? "Start free trial" : "Subscribe"}</Text>}
             </Pressable>
           ) : (
             <Mono color={C.inkFaint} size={11}>Unavailable</Mono>
@@ -114,10 +140,28 @@ export default function SettingsScreen({ focused }: { focused: boolean }) {
         </Row>
         {!pro && billingAvailable && (
           <Pressable onPress={restore} disabled={busy} hitSlop={6}>
-            <Mono color={C.inkMute} size={11} style={{ marginTop: 10 }}>Already purchased on this Google account? Restore purchases</Mono>
+            <Mono color={C.inkMute} size={11} style={{ marginTop: 10 }}>Already subscribed on this Google account? Restore purchases</Mono>
           </Pressable>
         )}
         {error && <Mono color={C.red} size={11} style={{ marginTop: 8 }}>{error}</Mono>}
+
+        {!pro && (
+          <View style={styles.codeRow}>
+            <TextInput
+              value={codeInput}
+              onChangeText={(t) => { setCodeInput(t); setCodeMsg(null); }}
+              placeholder="Have an access code?"
+              placeholderTextColor={C.inkFaint}
+              autoCapitalize="characters"
+              autoCorrect={false}
+              style={styles.codeInput}
+            />
+            <Pressable onPress={submitCode} disabled={busy || !codeInput.trim()} style={[styles.codeBtn, (busy || !codeInput.trim()) && { opacity: 0.5 }]}>
+              <Mono color="#fff" size={11}>Redeem</Mono>
+            </Pressable>
+          </View>
+        )}
+        {codeMsg && <Mono color={codeMsg.startsWith("Code accepted") ? C.go : C.red} size={11} style={{ marginTop: 8 }}>{codeMsg}</Mono>}
       </Section>
 
       {/* CAMERA */}
@@ -264,6 +308,9 @@ const styles = StyleSheet.create({
   name: { color: C.ink, fontFamily: F.sansMed, fontSize: 20, fontWeight: "700", letterSpacing: -0.4 },
   proBtn: { backgroundColor: C.red, borderRadius: 40, paddingHorizontal: 16, paddingVertical: 9, minWidth: 84, alignItems: "center" },
   proBtnText: { color: "#fff", fontFamily: F.sansMed, fontWeight: "700", fontSize: 13 },
+  codeRow: { flexDirection: "row", gap: 8, marginTop: 14 },
+  codeInput: { flex: 1, backgroundColor: C.bg2, borderWidth: 1, borderColor: C.lineStrong, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 9, color: C.ink, fontFamily: F.mono, fontSize: 12 },
+  codeBtn: { backgroundColor: C.surface2, borderWidth: 1, borderColor: C.lineStrong, borderRadius: 8, paddingHorizontal: 14, justifyContent: "center" },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   chip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 40, borderWidth: 1, borderColor: C.lineStrong, backgroundColor: C.bg2 },
   chipOn: { backgroundColor: C.red, borderColor: C.red },

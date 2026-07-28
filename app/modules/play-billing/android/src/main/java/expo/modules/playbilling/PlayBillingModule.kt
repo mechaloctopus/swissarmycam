@@ -21,9 +21,12 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * One-time-product ("non-consumable unlock") purchases via Google Play
- * Billing Library 9.x. Deliberately scoped to just INAPP one-time products —
- * Lensii has no subscriptions or consumables, so that's all this wraps.
+ * Subscription purchases via Google Play Billing Library 9.x — Lensii sells
+ * exactly one SUBS product (with a free-trial offer configured in Play
+ * Console, not tracked by this code at all: Play Billing treats an active
+ * trial as an active purchase, so "does queryPurchasesAsync return this
+ * product" already answers "does the user have access," trial or paid,
+ * with no separate trial-state bookkeeping needed here).
  *
  * A purchase resolves the pending `purchase()` promise the moment
  * PurchasesUpdatedListener reports it, and is also broadcast as
@@ -64,9 +67,13 @@ class PlayBillingModule : Module() {
         }
       }
 
+      // enablePendingPurchases() is mandatory regardless of product type, but
+      // enableOneTimeProducts() specifically opts into pending (deferred)
+      // one-time-purchase support -- not applicable now that Lensii sells
+      // only a subscription, so it's left off.
       val client = BillingClient.newBuilder(context)
         .setListener(listener)
-        .enablePendingPurchases(PendingPurchasesParams.newBuilder().enableOneTimeProducts().build())
+        .enablePendingPurchases(PendingPurchasesParams.newBuilder().build())
         .enableAutoServiceReconnection()
         .build()
       billingClient = client
@@ -91,7 +98,7 @@ class PlayBillingModule : Module() {
       val products = (0 until ids.length()).map { i ->
         QueryProductDetailsParams.Product.newBuilder()
           .setProductId(ids.getString(i))
-          .setProductType(ProductType.INAPP)
+          .setProductType(ProductType.SUBS)
           .build()
       }
       val params = QueryProductDetailsParams.newBuilder().setProductList(products).build()
@@ -104,15 +111,29 @@ class PlayBillingModule : Module() {
         val out = JSONArray()
         for (details in result.productDetailsList) {
           productDetailsCache[details.productId] = details
-          val offer = details.oneTimePurchaseOfferDetails
+          // The first offer on the first base plan — Lensii only ever
+          // configures one base plan with one (trial) offer per product, so
+          // there's no offer-selection UI to build.
+          val offer = details.subscriptionOfferDetails?.firstOrNull()
+          val phases = offer?.pricingPhases?.pricingPhaseList ?: emptyList()
+          val phasesJson = JSONArray()
+          for (phase in phases) {
+            phasesJson.put(
+              JSONObject().apply {
+                put("price", phase.formattedPrice)
+                put("priceAmountMicros", phase.priceAmountMicros)
+                put("currencyCode", phase.priceCurrencyCode)
+                put("billingPeriod", phase.billingPeriod)
+                put("recurrenceMode", phase.recurrenceMode)
+              }
+            )
+          }
           out.put(
             JSONObject().apply {
               put("productId", details.productId)
               put("title", details.title)
               put("description", details.description)
-              put("price", offer?.formattedPrice ?: "")
-              put("priceAmountMicros", offer?.priceAmountMicros ?: 0L)
-              put("currencyCode", offer?.priceCurrencyCode ?: "")
+              put("pricingPhases", phasesJson)
             }
           )
         }
@@ -135,8 +156,14 @@ class PlayBillingModule : Module() {
           promise.reject("UNKNOWN_PRODUCT", "Call queryProducts() for this product first", null)
         }
         else -> {
-          val paramsBuilder = BillingFlowParams.ProductDetailsParams.newBuilder().setProductDetails(details)
-          details.oneTimePurchaseOfferDetails?.offerToken?.let { paramsBuilder.setOfferToken(it) }
+          val offerToken = details.subscriptionOfferDetails?.firstOrNull()?.offerToken
+          if (offerToken == null) {
+            promise.reject("NO_OFFER", "This subscription has no purchasable offer configured in Play Console", null)
+            return@AsyncFunction
+          }
+          val paramsBuilder = BillingFlowParams.ProductDetailsParams.newBuilder()
+            .setProductDetails(details)
+            .setOfferToken(offerToken)
           val flowParams = BillingFlowParams.newBuilder()
             .setProductDetailsParamsList(listOf(paramsBuilder.build()))
             .build()
@@ -157,7 +184,7 @@ class PlayBillingModule : Module() {
         promise.reject("NOT_CONNECTED", "Call connect() first", null)
         return@AsyncFunction
       }
-      val params = QueryPurchasesParams.newBuilder().setProductType(ProductType.INAPP).build()
+      val params = QueryPurchasesParams.newBuilder().setProductType(ProductType.SUBS).build()
       client.queryPurchasesAsync(params) { billingResult, purchases ->
         if (billingResult.responseCode != BillingResponseCode.OK) {
           promise.reject("QUERY_FAILED", billingResult.debugMessage ?: "Could not query purchases", null)

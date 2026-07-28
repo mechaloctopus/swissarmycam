@@ -22,6 +22,10 @@ Download `lensii.apk` on your phone and open it (allow "install unknown apps" if
 
 ## What works today
 
+**Capture and Library are free forever.** Every other tab needs an active 7-day free trial,
+$14/month subscription, or a redeemed access code (Settings always stays free too, since that's
+where you'd start the trial or enter a code) — see "Selling on Google Play" below.
+
 | Tab | Status | Notes |
 | --- | --- | --- |
 | **Capture** | ✅ Works | **Photo + video** modes. Front/rear flip, flash (off/auto/on), **torch**, **continuous zoom slider**, rule-of-thirds / golden / square grid, electronic level (accelerometer), reticle, self-timer. Video honors the mic + resolution settings. Saves in-app + optional auto-save to Photos. **Underwater / record lock**: engage manually or auto-engage the moment recording starts — every control except a deliberate 1.2s hold-to-unlock goes dead to touch, so water pressure/droplets on the screen can't stop or change a recording. Screen stays awake for the whole take. |
@@ -128,6 +132,23 @@ One-time setup (nobody but a project owner with GCP access can do this part):
    ask Claude to trigger it.
 
 ## Selling on Google Play
+
+**Monetization:** Capture and Library are free forever, no account or purchase needed. Every
+other tab (Studio, Editor, Screen, Timelapse, Clay, Scan, Trace, Lab, Attachments, Tools) needs an
+active free trial, subscription, or a redeemed access code — Settings always stays free too, since
+that's where a trial starts or a code gets redeemed.
+
+1. In Play Console, create a **subscription** product with id **`lensii_pro_monthly`** (must match
+   `SUBSCRIPTION_PRODUCT_ID` in `src/entitlements.tsx` exactly), one base plan, monthly billing,
+   your price (e.g. $14.00), and a **7-day free trial offer** on that base plan — the free trial is
+   entirely a Play Console configuration, nothing in the app tracks trial state itself.
+2. **Access codes** (for reviewers, press, or your own testing — bypass Play Billing entirely):
+   ```bash
+   node scripts/generate-promo-code.js SOMEPAYLOAD
+   ```
+   First change `PROMO_SECRET` in `src/promoCodes.ts` to something real (the placeholder refuses
+   to generate codes) — see that file's comments for what security property this scheme does and
+   doesn't provide. A generated code goes in Settings → "Have an access code?".
 
 See [`PLAY_STORE_SUBMISSION.md`](./PLAY_STORE_SUBMISSION.md) for accurate, from-the-code answers
 to Play Console's Data Safety and Content Rating questionnaires, plus a full permission-by-

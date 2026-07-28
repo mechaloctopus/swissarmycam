@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, Pressable, ScrollView } from "react-native";
+import { View, Text, StyleSheet, Pressable, ScrollView, ActivityIndicator } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useCameraPermissions } from "expo-camera";
 import { SettingsProvider } from "./src/settings";
+import { EntitlementProvider, useEntitlement } from "./src/entitlements";
 import { C, F } from "./src/theme";
 import { Mark } from "./src/components/Mark";
 import { Mono } from "./src/components/ui";
@@ -40,6 +41,12 @@ const TABS: Tab[] = [
   { key: "settings", name: "Settings", glyph: "⚙", kind: "plain" },
 ];
 
+// Capture and Library are always free. Settings has to stay free too — it's
+// where a trial/subscription starts or a code gets redeemed, so gating it
+// would make unlocking anything else impossible. Every other tab needs an
+// active trial, subscription, or redeemed access code.
+const FREE_TABS = new Set(["capture", "library", "settings"]);
+
 function Screen({ tabKey, focused }: { tabKey: string; focused: boolean }) {
   switch (tabKey) {
     case "capture": return <CaptureScreen focused={focused} />;
@@ -65,18 +72,24 @@ function Shell() {
   const [permission, requestPermission] = useCameraPermissions();
   const [mounted, setMounted] = useState<Set<string>>(new Set());
   const activeTab = TABS.find((t) => t.key === active)!;
+  const { pro } = useEntitlement();
 
   const cameraReady = !!permission?.granted;
+  const activeUnlocked = FREE_TABS.has(active) || pro;
 
   // Keep visited screens mounted (so returning doesn't re-init the camera).
+  // Gated screens never mount at all until unlocked — no point spinning up a
+  // camera/native module for a tab the user can't use yet.
   useEffect(() => {
     const t = TABS.find((x) => x.key === active)!;
+    if (!FREE_TABS.has(t.key) && !pro) return;
     if (t.kind === "camera" && !cameraReady) return; // wait for permission before mounting camera screens
     setMounted((m) => (m.has(active) ? m : new Set([...m, active])));
-  }, [active, cameraReady]);
+  }, [active, cameraReady, pro]);
 
-  const showGate = activeTab.kind === "camera" && permission && !permission.granted;
-  const showPermSplash = activeTab.kind === "camera" && !permission;
+  const showPaywall = !activeUnlocked;
+  const showGate = !showPaywall && activeTab.kind === "camera" && permission && !permission.granted;
+  const showPermSplash = !showPaywall && activeTab.kind === "camera" && !permission;
 
   return (
     <View style={styles.root}>
@@ -97,6 +110,7 @@ function Shell() {
 
         {showPermSplash && <View style={[StyleSheet.absoluteFill, { paddingTop: insets.top }]}><Splash label="Checking permissions…" /></View>}
         {showGate && <View style={[StyleSheet.absoluteFill, { paddingTop: insets.top }]}><PermissionGate onGrant={requestPermission} canAsk={permission!.canAskAgain} /></View>}
+        {showPaywall && <View style={[StyleSheet.absoluteFill, { paddingTop: insets.top }]}><PaywallGate onOpenSettings={() => setActive("settings")} /></View>}
       </View>
 
       <View style={[styles.tabbarWrap, { paddingBottom: Math.max(insets.bottom, 8) }]}>
@@ -125,6 +139,38 @@ function Splash({ label }: { label: string }) {
   );
 }
 
+function PaywallGate({ onOpenSettings }: { onOpenSettings: () => void }) {
+  const { trial, recurring, busy, error, buy, available } = useEntitlement();
+  return (
+    <View style={styles.center}>
+      <Mark size={72} />
+      <Text style={styles.gateTitle}>Part of the full toolkit</Text>
+      <Text style={styles.gateText}>
+        Capture and Library are always free. Studio, Editor, Screen, Timelapse, Clay, Scan,
+        Trace, Lab, Attachments, and Tools are unlocked with a trial, subscription, or access code.
+      </Text>
+      {available ? (
+        <Pressable onPress={buy} disabled={busy} style={[styles.gateBtn, busy && { opacity: 0.6 }]}>
+          {busy ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.gateBtnText}>
+              {trial ? "Start free trial" : "Subscribe"}
+              {recurring ? ` · ${recurring.price}/mo` : ""}
+            </Text>
+          )}
+        </Pressable>
+      ) : (
+        <Mono color={C.inkFaint} size={11} style={{ marginTop: 20 }}>Purchases need an Android build with Play Billing linked.</Mono>
+      )}
+      <Pressable onPress={onOpenSettings} hitSlop={8}>
+        <Mono color={C.inkMute} size={12} style={{ marginTop: 18 }}>Have an access code? Open Settings →</Mono>
+      </Pressable>
+      {error && <Mono color={C.red} size={11} style={{ marginTop: 12 }}>{error}</Mono>}
+    </View>
+  );
+}
+
 function PermissionGate({ onGrant, canAsk }: { onGrant: () => void; canAsk: boolean }) {
   return (
     <View style={styles.center}>
@@ -146,7 +192,9 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <SettingsProvider>
-        <Shell />
+        <EntitlementProvider>
+          <Shell />
+        </EntitlementProvider>
       </SettingsProvider>
     </SafeAreaProvider>
   );
