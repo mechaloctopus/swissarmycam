@@ -64,9 +64,33 @@ jobs:
       - name: Prebuild native Android project
         run: npx expo prebuild --platform android --no-install
 
+      # Opt-in real release signing: only decodes/exports anything when the
+      # LENSII_RELEASE_KEYSTORE_BASE64 secret exists. Until it does, Gradle's
+      # signingConfigs.release (see plugins/withReleaseSigning.js) stays
+      # unconfigured and the release build falls back to debug signing,
+      # exactly as it always has — nothing below changes that path.
+      - name: Decode release keystore (if configured)
+        if: ${{ secrets.LENSII_RELEASE_KEYSTORE_BASE64 != '' }}
+        working-directory: app
+        env:
+          KEYSTORE_B64: ${{ secrets.LENSII_RELEASE_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.LENSII_RELEASE_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.LENSII_RELEASE_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.LENSII_RELEASE_KEY_PASSWORD }}
+        run: |
+          echo "$KEYSTORE_B64" | base64 -d > release.keystore
+          echo "LENSII_RELEASE_KEYSTORE=$GITHUB_WORKSPACE/app/release.keystore" >> "$GITHUB_ENV"
+          echo "LENSII_RELEASE_STORE_PASSWORD=$STORE_PASSWORD" >> "$GITHUB_ENV"
+          echo "LENSII_RELEASE_KEY_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
+          echo "LENSII_RELEASE_KEY_PASSWORD=$KEY_PASSWORD" >> "$GITHUB_ENV"
+
       - name: Gradle — assembleRelease
         working-directory: app/android
         run: ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: Gradle — bundleRelease (Play Store AAB)
+        working-directory: app/android
+        run: ./gradlew bundleRelease --no-daemon --stacktrace
 
       - name: Stage APK
         run: |
@@ -80,6 +104,16 @@ jobs:
         with:
           name: lensii-apk
           path: dist/*.apk
+          if-no-files-found: error
+
+      # Not published to the public GitHub Release below (an AAB isn't
+      # directly installable) -- this is for pulling down and uploading to
+      # Play Console once real release signing (above) is configured.
+      - name: Upload AAB artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lensii-aab
+          path: app/android/app/build/outputs/bundle/release/app-release.aab
           if-no-files-found: error
 
       - name: Publish to GitHub Release (android-latest)

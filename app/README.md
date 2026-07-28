@@ -71,6 +71,37 @@ cd android && ./gradlew assembleRelease
 Requires JDK 17 and the Android SDK. CI does exactly this — see
 [`.github/workflows/android.yml`](../.github/workflows/android.yml).
 
+## Release signing (required before Play Store submission)
+
+Every build today is **debug-signed** — fine for sideloading, but Google Play requires a real
+release keystore, and losing that keystore means you can never update the app under the same
+listing again. [`plugins/withReleaseSigning.js`](./plugins/withReleaseSigning.js) wires up real
+signing, opt-in via environment variables — sideload builds keep working untouched until you set
+these up.
+
+One-time setup (do this yourself; the keystore and its passwords must never be committed):
+
+1. Generate a keystore (needs a JDK installed — `keytool` ships with it):
+   ```bash
+   keytool -genkeypair -v -keystore lensii-release.keystore -alias lensii \
+     -keyalg RSA -keysize 2048 -validity 10000
+   ```
+   It'll ask for a store password, a key password (can be the same), and some identity fields —
+   answer honestly, they end up in the certificate. **Back up `lensii-release.keystore` and both
+   passwords somewhere safe outside this repo** (a password manager, not a text file in the
+   project). If you lose it, there is no recovery — you'd have to publish as a new, separate app.
+2. Base64-encode it: `base64 -i lensii-release.keystore | pbcopy` (macOS) or
+   `base64 -w0 lensii-release.keystore` (Linux) and copy the output.
+3. In the GitHub repo, **Settings → Secrets and variables → Actions**, add four repo **secrets**:
+   - `LENSII_RELEASE_KEYSTORE_BASE64` — the base64 output from step 2
+   - `LENSII_RELEASE_STORE_PASSWORD`
+   - `LENSII_RELEASE_KEY_ALIAS` — `lensii` if you used the command above as-is
+   - `LENSII_RELEASE_KEY_PASSWORD`
+4. Push anything — `.github/workflows/android.yml` now decodes the keystore and signs
+   `assembleRelease`/`bundleRelease` for real. The **AAB** (`lensii-aab` workflow artifact, not the
+   public GitHub Release — Play Console needs an `.aab`, not an `.apk`) is what you upload to Play
+   Console; the `.apk` on the Release page stays for direct sideloading either way.
+
 ## Firebase Test Lab setup (automated device smoke test)
 
 [`.github/workflows/firebase-test-lab.yml`](../.github/workflows/firebase-test-lab.yml) runs Google's

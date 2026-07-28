@@ -57,7 +57,8 @@
         {
           "photosPermission": "Lensii lets you import your own images and overlays from your photo library."
         }
-      ]
+      ],
+      "./plugins/withReleaseSigning"
     ]
   }
 }
