@@ -1,11 +1,21 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { View, Text, StyleSheet, Pressable, ScrollView, Image, FlatList } from "react-native";
+import { View, Text, StyleSheet, Pressable, ScrollView, Image, FlatList, ActivityIndicator } from "react-native";
 import { CameraView } from "expo-camera";
 import * as Haptics from "expo-haptics";
+import * as VideoThumbnails from "expo-video-thumbnails";
 import { C, F } from "../theme";
 import { Label, Mono, StatusPill } from "../components/ui";
 import { newScanSession, saveScanFrame, listScanSessions, deleteScanSession, ScanSession } from "../store";
+import { pickVideoFromLibrary } from "../media";
 import { useSettings } from "../settings";
+
+// Extracted frames are sampled at a fixed interval rather than a known frame
+// count, since getting a video's exact duration up front needs its own
+// decode step — cheaper to just keep sampling until a few consecutive probes
+// land past the end of the clip.
+const VIDEO_FRAME_INTERVAL_MS = 1200;
+const MAX_VIDEO_FRAMES = 40;
+const MAX_CONSECUTIVE_MISSES = 3;
 
 /**
  * Room/object scan capture — "NeRF Measure," phase one. Guides a multi-angle
@@ -24,6 +34,8 @@ export default function RoomScanScreen({ focused }: { focused: boolean }) {
   const [sessions, setSessions] = useState<ScanSession[]>([]);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [extracting, setExtracting] = useState(false);
+  const [extractCount, setExtractCount] = useState(0);
 
   const sessionRef = useRef<string | null>(null);
   const idxRef = useRef(0);
@@ -76,6 +88,47 @@ export default function RoomScanScreen({ focused }: { focused: boolean }) {
     sessionRef.current = null;
     setScanning(false);
     setFrames([]);
+  };
+
+  /**
+   * Turns an imported video into a scan session by sampling still frames out
+   * of it at a fixed interval (via expo-video-thumbnails) and feeding them
+   * into the same session-storage pipeline the live capture flow uses — the
+   * resulting session is indistinguishable from a hand-shot one downstream.
+   */
+  const importVideo = async () => {
+    if (extracting) return;
+    const videoUri = await pickVideoFromLibrary();
+    if (!videoUri) return;
+
+    setExtracting(true);
+    setExtractCount(0);
+    const session = newScanSession();
+    let index = 0;
+    let timeMs = 0;
+    let misses = 0;
+    try {
+      while (index < MAX_VIDEO_FRAMES && misses < MAX_CONSECUTIVE_MISSES) {
+        try {
+          const { uri: frameUri } = await VideoThumbnails.getThumbnailAsync(videoUri, { time: timeMs, quality: 0.85 });
+          await saveScanFrame(session, frameUri, index++);
+          setExtractCount(index);
+          misses = 0;
+        } catch {
+          misses++;
+        }
+        timeMs += VIDEO_FRAME_INTERVAL_MS;
+      }
+      if (index === 0) {
+        await deleteScanSession(session);
+        flash("Couldn't extract frames from that video");
+      } else {
+        flash(`Extracted ${index} angles from video`);
+        loadSessions();
+      }
+    } finally {
+      setExtracting(false);
+    }
   };
 
   if (scanning) {
@@ -148,6 +201,21 @@ export default function RoomScanScreen({ focused }: { focused: boolean }) {
         <Text style={styles.newScanText}>◫ Start a new scan</Text>
       </Pressable>
 
+      <Pressable onPress={importVideo} disabled={extracting} style={[styles.importBtn, extracting && { opacity: 0.6 }]}>
+        {extracting ? (
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+            <ActivityIndicator color={C.inkSoft} size="small" />
+            <Text style={styles.importText}>Extracting angles… {extractCount}</Text>
+          </View>
+        ) : (
+          <Text style={styles.importText}>▶ Import from video instead</Text>
+        )}
+      </Pressable>
+      <Mono color={C.inkFaint} size={10.5} style={{ marginTop: 8 }}>
+        Walk a video around the subject the same way you'd shoot stills — frames get sampled out of
+        it automatically into a scan set.
+      </Mono>
+
       {sessions.length > 0 && (
         <>
           <Text style={styles.sub}>Saved scans ({sessions.length})</Text>
@@ -182,6 +250,8 @@ const styles = StyleSheet.create({
   sub: { color: C.inkMute, fontFamily: F.mono, fontSize: 11, letterSpacing: 1, textTransform: "uppercase", marginTop: 24, marginBottom: 12 },
   newScanBtn: { marginTop: 22, backgroundColor: C.red, borderRadius: 8, paddingVertical: 15, alignItems: "center" },
   newScanText: { color: "#fff", fontFamily: F.sansMed, fontWeight: "700", fontSize: 15 },
+  importBtn: { marginTop: 10, backgroundColor: C.surface, borderWidth: 1, borderColor: C.lineStrong, borderRadius: 8, paddingVertical: 13, alignItems: "center" },
+  importText: { color: C.inkSoft, fontFamily: F.sansMed, fontWeight: "600", fontSize: 13.5 },
   sessionRow: { flexDirection: "row", alignItems: "center", backgroundColor: C.surface, borderWidth: 1, borderColor: C.line, borderRadius: 10, padding: 10, marginBottom: 8 },
   sessionCover: { width: 48, height: 48, borderRadius: 6 },
   sessionCoverEmpty: { backgroundColor: C.bg2 },

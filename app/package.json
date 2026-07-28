@@ -25,6 +25,7 @@
     "expo-status-bar": "~57.0.0",
     "expo-system-ui": "~57.0.0",
     "expo-video": "~57.0.0",
+    "expo-video-thumbnails": "~57.0.1",
     "react": "19.2.3",
     "react-native": "0.86.0",
     "react-native-image-colors": "^2.4.0",
