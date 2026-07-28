@@ -2,7 +2,7 @@
   "expo": {
     "name": "Lensii",
     "slug": "lensii",
-    "version": "0.16.0",
+    "version": "0.17.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "lensii",
@@ -25,7 +25,7 @@
     },
     "android": {
       "package": "com.swissarmycamera.app",
-      "versionCode": 18,
+      "versionCode": 19,
       "userInterfaceStyle": "dark",
       "adaptiveIcon": {
         "backgroundColor": "#0B0B0C",
@@ -58,7 +58,8 @@
           "photosPermission": "Lensii lets you import your own images and overlays from your photo library."
         }
       ],
-      "./plugins/withReleaseSigning"
+      "./plugins/withReleaseSigning",
+      "./plugins/withTrimmedPermissions"
     ]
   }
 }

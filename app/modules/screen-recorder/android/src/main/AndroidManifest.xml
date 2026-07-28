@@ -1,6 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+  <!-- Required (Android 13+ / API 33+) to actually show the persistent
+       recording notification the foreground service depends on. -->
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
   <application>
     <service

@@ -29,6 +29,8 @@ const CAPS: { name: string; level: string; tone: string }[] = [
   { name: "Claymation onion-skin capture + MP4 bake", level: "Possible now", tone: C.go },
   { name: "NeRF reconstruction + AR measurement overlay", level: "Requires cloud compute", tone: C.attach },
   { name: "AR surface-locked trace / mural projection (ARCore)", level: "Possible now", tone: C.go },
+  { name: "In-app purchases (Google Play Billing)", level: "Possible now", tone: C.go },
+  { name: "NeRF scan capture from an imported video", level: "Possible now", tone: C.go },
   { name: "Manual ISO / shutter / RAW capture", level: "Requires native code", tone: C.native },
   { name: "Input mic-gain / audio DSP", level: "Requires native code", tone: C.native },
   { name: "IR / thermal / UV", level: "Requires attachment", tone: C.attach },

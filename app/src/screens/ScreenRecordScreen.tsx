@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { View, Text, StyleSheet, Pressable, ScrollView } from "react-native";
+import { View, Text, StyleSheet, Pressable, ScrollView, PermissionsAndroid, Platform } from "react-native";
 import * as Haptics from "expo-haptics";
 import { C, F } from "../theme";
 import { Label, Mono, StatusPill } from "../components/ui";
@@ -32,6 +32,17 @@ export default function ScreenRecordScreen() {
     if (!available || starting || recording) return;
     setStarting(true);
     try {
+      // Android 13+ requires this to actually show the persistent recording
+      // notification the foreground service depends on — best-effort: the
+      // service still starts either way, this just governs whether the
+      // "tap to stop" notification is visible.
+      if (Platform.OS === "android" && Platform.Version >= 33) {
+        try {
+          await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS);
+        } catch {
+          // ignore — proceed regardless of grant result
+        }
+      }
       const { uri, path } = await newVideoOutputPath();
       outputUriRef.current = uri;
       const ok = await startRecording(path, withMic);

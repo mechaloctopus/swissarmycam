@@ -127,6 +127,13 @@ One-time setup (nobody but a project owner with GCP access can do this part):
 6. Run the workflow from the Actions tab (`Firebase Test Lab (Robo smoke test)` → Run workflow), or
    ask Claude to trigger it.
 
+## Selling on Google Play
+
+See [`PLAY_STORE_SUBMISSION.md`](./PLAY_STORE_SUBMISSION.md) for accurate, from-the-code answers
+to Play Console's Data Safety and Content Rating questionnaires, plus a full permission-by-
+permission justification list. Release signing is documented above; the Privacy Policy/Terms
+pages are at the repo root ([`../privacy.html`](../privacy.html), [`../terms.html`](../terms.html)).
+
 ## Tech
 
 - **Expo SDK 57 · React Native 0.86 · TypeScript**
