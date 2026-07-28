@@ -1,0 +1,7 @@
+{
+  "name": "audio-info",
+  "version": "1.0.0",
+  "description": "Local Expo module: real device microphone hardware inventory (Lensii).",
+  "main": "index.ts",
+  "private": true
+}

@@ -6,6 +6,7 @@ import { C, F } from "../theme";
 import { Label, Mono, StatusPill } from "../components/ui";
 import { loadPictureSizes, sortSizes } from "../caps";
 import { getLensInfo, LensInfo } from "camera-info";
+import { getMicrophones, MicrophoneInfo } from "audio-info";
 
 type Row = { k: string; v: string };
 
@@ -13,6 +14,7 @@ export default function AttachmentsScreen({ focused }: { focused: boolean }) {
   const [device, setDevice] = useState<Row[]>([]);
   const [camera, setCamera] = useState<Row[]>([]);
   const [lenses, setLenses] = useState<LensInfo[]>([]);
+  const [mics, setMics] = useState<MicrophoneInfo[]>([]);
   const [sensors, setSensors] = useState<{ name: string; ok: boolean }[]>([]);
   const [scanning, setScanning] = useState(false);
 
@@ -35,6 +37,7 @@ export default function AttachmentsScreen({ focused }: { focused: boolean }) {
     ]);
 
     setLenses(getLensInfo());
+    setMics(getMicrophones());
 
     const checks: [string, () => Promise<boolean>][] = [
       ["Accelerometer", () => Accelerometer.isAvailableAsync()],
@@ -99,6 +102,29 @@ export default function AttachmentsScreen({ focused }: { focused: boolean }) {
           ))}
           <Mono color={C.inkMute} size={10} style={{ paddingHorizontal: 2, marginTop: 2 }}>
             Real Camera2 hardware data — read-only for now. Live manual capture using these ranges is Phase 3.
+          </Mono>
+        </View>
+      )}
+
+      {mics.length > 0 && (
+        <View style={{ marginTop: 22 }}>
+          <Text style={styles.section}>Microphone hardware · AudioManager</Text>
+          {mics.map((m) => (
+            <View key={m.id} style={[styles.card, { marginBottom: 10 }]}>
+              <View style={styles.lensHead}>
+                <Mono color={C.ink} size={12}>{m.type.toUpperCase()} · #{m.id}</Mono>
+                <Mono color={C.inkMute} size={10}>{m.directionality}</Mono>
+              </View>
+              <KV k="Location" v={m.location} />
+              <KV k="Group" v={m.group >= 0 ? `${m.group} (index ${m.indexInGroup})` : "—"} />
+              <KV k="Position" v={m.position ? `x ${m.position.x.toFixed(2)}, y ${m.position.y.toFixed(2)}, z ${m.position.z.toFixed(2)} m` : "not reported"} />
+            </View>
+          ))}
+          <Mono color={C.inkMute} size={10} style={{ paddingHorizontal: 2, marginTop: 2 }}>
+            Real AudioManager hardware data. Most phones report one entry here even with multiple
+            physical mics — Android's audio HAL handles multi-mic beamforming internally and
+            doesn't expose individual mics to apps unless the device specifically does; this shows
+            exactly what your device reports, nothing fabricated.
           </Mono>
         </View>
       )}
