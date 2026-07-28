@@ -1,0 +1,7 @@
+{
+  "name": "play-billing",
+  "version": "1.0.0",
+  "description": "Local Expo module: Google Play Billing one-time-product purchases (Lensii).",
+  "main": "index.ts",
+  "private": true
+}

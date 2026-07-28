@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Linking, Pressable, Alert } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Linking, Pressable, Alert, ActivityIndicator } from "react-native";
 import Constants from "expo-constants";
 import { C, F } from "../theme";
 import { Mono } from "../components/ui";
@@ -8,6 +8,7 @@ import { Row, Section, Toggle, Segmented, Slider, Stepper } from "../components/
 import { useSettings, DEFAULTS } from "../settings";
 import { loadPictureSizes, sortSizes } from "../caps";
 import { storageBytes, humanBytes, clearAllCaptures, countMedia } from "../store";
+import { useEntitlement } from "../entitlements";
 
 const CAPS: { name: string; level: string; tone: string }[] = [
   { name: "Photo + video capture, flip, flash, torch, zoom", level: "Possible now", tone: C.go },
@@ -42,6 +43,7 @@ const PRIVACY = [
 
 export default function SettingsScreen({ focused }: { focused: boolean }) {
   const { settings, update, reset } = useSettings();
+  const { pro, product, busy, error, buy, restore, available: billingAvailable } = useEntitlement();
   const [sizes, setSizes] = useState<string[]>([]);
   const [bytes, setBytes] = useState(0);
   const [counts, setCounts] = useState({ photos: 0, videos: 0 });
@@ -85,6 +87,36 @@ export default function SettingsScreen({ focused }: { focused: boolean }) {
           <Mono color={C.inkMute} size={11}>The Swiss Army knife of camera apps · v{version}</Mono>
         </View>
       </View>
+
+      {/* PRO */}
+      <Section title="Lensii Pro">
+        <Row
+          title={pro ? "You have Lensii Pro" : "Unlock Lensii Pro"}
+          hint={
+            pro
+              ? "Thanks for supporting Lensii."
+              : billingAvailable
+                ? "A one-time purchase — nothing is gated behind it yet."
+                : "Purchases need an Android build with Play Billing linked."
+          }
+        >
+          {pro ? (
+            <Mono color={C.go} size={12}>✓ Unlocked</Mono>
+          ) : billingAvailable ? (
+            <Pressable onPress={buy} disabled={busy} style={[styles.proBtn, busy && { opacity: 0.6 }]}>
+              {busy ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.proBtnText}>{product ? `Buy · ${product.price}` : "Buy"}</Text>}
+            </Pressable>
+          ) : (
+            <Mono color={C.inkFaint} size={11}>Unavailable</Mono>
+          )}
+        </Row>
+        {!pro && billingAvailable && (
+          <Pressable onPress={restore} disabled={busy} hitSlop={6}>
+            <Mono color={C.inkMute} size={11} style={{ marginTop: 10 }}>Already purchased on this Google account? Restore purchases</Mono>
+          </Pressable>
+        )}
+        {error && <Mono color={C.red} size={11} style={{ marginTop: 8 }}>{error}</Mono>}
+      </Section>
 
       {/* CAMERA */}
       <Section title="Camera · Photo">
@@ -228,6 +260,8 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: C.bg },
   brand: { flexDirection: "row", alignItems: "center", gap: 14, paddingHorizontal: 4 },
   name: { color: C.ink, fontFamily: F.sansMed, fontSize: 20, fontWeight: "700", letterSpacing: -0.4 },
+  proBtn: { backgroundColor: C.red, borderRadius: 40, paddingHorizontal: 16, paddingVertical: 9, minWidth: 84, alignItems: "center" },
+  proBtnText: { color: "#fff", fontFamily: F.sansMed, fontWeight: "700", fontSize: 13 },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   chip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 40, borderWidth: 1, borderColor: C.lineStrong, backgroundColor: C.bg2 },
   chipOn: { backgroundColor: C.red, borderColor: C.red },
