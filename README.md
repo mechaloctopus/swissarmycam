@@ -90,6 +90,12 @@ Any static host works. Point it at the repository root (no build command, no out
 | **Cloudflare Pages** | Connect repo, build command empty, output dir = `/`. |
 | **Any S3 / static bucket** | Upload the files, enable static hosting. |
 
+**`privacy.html`** and **`terms.html`** deploy alongside `index.html` automatically with any of
+the above — Google Play (Data Safety section) requires a real, public Privacy Policy URL before
+the app can be submitted. **Before deploying for real**, open both files and fill in every
+`[BRACKETED]` placeholder (contact email, developer/business name, jurisdiction) — they're
+accurate drafts of what the app actually does, not filled-in legal documents yet.
+
 ---
 
 ## 4. Editing content
