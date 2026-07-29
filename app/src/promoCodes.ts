@@ -19,7 +19,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
  * guessed or brute-forced casually," not "codes are unforgeable by a
  * determined attacker with the APK in hand."
  */
-const PROMO_SECRET = "lensii-promo-v1-CHANGE-ME-BEFORE-SHIPPING";
+const PROMO_SECRET = "1vyUmS0P9qi9EB3Gg3WGW2ukE0X_p-qvmAlYM0g6zrg";
 
 const CODE_PREFIX = "LENSII";
 const STORAGE_KEY = "lensii.entitlement.promoCode";
