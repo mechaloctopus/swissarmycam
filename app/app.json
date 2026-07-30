@@ -2,7 +2,7 @@
   "expo": {
     "name": "Lensii",
     "slug": "lensii",
-    "version": "0.18.0",
+    "version": "0.19.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "lensii",
@@ -13,7 +13,9 @@
       "resizeMode": "contain",
       "backgroundColor": "#0B0B0C"
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.swissarmycamera.app",
@@ -25,7 +27,7 @@
     },
     "android": {
       "package": "com.swissarmycamera.app",
-      "versionCode": 20,
+      "versionCode": 21,
       "userInterfaceStyle": "dark",
       "adaptiveIcon": {
         "backgroundColor": "#0B0B0C",

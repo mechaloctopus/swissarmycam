@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { View, Text, StyleSheet, Pressable, Animated, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, Pressable, Animated, ActivityIndicator, Modal, ScrollView } from "react-native";
 import { CameraView, CameraType, CameraMode, useMicrophonePermissions } from "expo-camera";
 import { Image } from "expo-image";
 import * as Haptics from "expo-haptics";
@@ -11,6 +11,8 @@ import { GridOverlay, Reticle, LevelIndicator } from "../components/Overlays";
 import { saveCapture, saveVideo, listMedia, MediaItem } from "../store";
 import { saveToPhotos } from "../media";
 import { savePictureSizes } from "../caps";
+import { PalettePanel, TextResult, SceneResult } from "../components/PalettePanel";
+import { extractPalette, extractText, labelScene, Swatch, TextScan, SceneLabel } from "../analyze";
 import { useSettings, FlashMode } from "../settings";
 
 const FLASH_CYCLE: FlashMode[] = ["off", "auto", "on"];
@@ -45,6 +47,14 @@ export default function CaptureScreen({ focused }: { focused: boolean }) {
   const [last, setLast] = useState<MediaItem | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [locked, setLocked] = useState(false);
+
+  // Visual intelligence, folded in from the old separate Lab tab: analysis
+  // runs on the most recent photo rather than a throwaway extra capture.
+  const [analyzeOpen, setAnalyzeOpen] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [palette, setPalette] = useState<Swatch[]>([]);
+  const [ocr, setOcr] = useState<TextScan | null>(null);
+  const [scene, setScene] = useState<SceneLabel[]>([]);
 
   const flashAnim = useRef(new Animated.Value(0)).current;
   const unlockAnim = useRef(new Animated.Value(0)).current;
@@ -106,6 +116,33 @@ export default function CaptureScreen({ focused }: { focused: boolean }) {
   useEffect(() => () => {
     if (unlockTimer.current) clearTimeout(unlockTimer.current);
   }, []);
+
+  /**
+   * Runs the three on-device analysers over the last photo. Each is
+   * independent, so one failing (no text found, labeller unavailable) still
+   * lets the others report.
+   */
+  const runAnalysis = useCallback(async () => {
+    if (!last || last.kind !== "photo") {
+      showToast("Take a photo first");
+      return;
+    }
+    setAnalyzeOpen(true);
+    setAnalyzing(true);
+    setPalette([]);
+    setOcr(null);
+    setScene([]);
+    const uri = last.uri;
+    const [p, t, s] = await Promise.all([
+      extractPalette(uri).catch(() => []),
+      extractText(uri).catch(() => ({ text: "", lines: 0, words: 0 })),
+      labelScene(uri).catch(() => []),
+    ]);
+    setPalette(p);
+    setOcr(t);
+    setScene(s);
+    setAnalyzing(false);
+  }, [last]);
 
   const showToast = useCallback((m: string) => {
     setToast(m);
@@ -275,6 +312,7 @@ export default function CaptureScreen({ focused }: { focused: boolean }) {
           <MiniTool glyph="✛" label="Reticle" on={settings.reticle} onPress={() => update({ reticle: !settings.reticle })} />
           <MiniTool glyph="⧗" label={`Timer ${settings.timerDefault}s`} on={settings.timerDefault > 0} onPress={() => update({ timerDefault: TIMERS[(TIMERS.indexOf(settings.timerDefault) + 1) % TIMERS.length] })} />
           <MiniTool glyph="⬥" label="Underwater" on={settings.underwaterLock} onPress={() => update({ underwaterLock: !settings.underwaterLock })} />
+          <MiniTool glyph="⌬" label="Analyze" onPress={runAnalysis} />
         </View>
 
         {/* mode switch */}
@@ -364,6 +402,27 @@ export default function CaptureScreen({ focused }: { focused: boolean }) {
           <Mono color={C.inkMute} size={11} style={{ marginTop: 10 }}>INITIALISING SENSOR…</Mono>
         </View>
       )}
+
+      <Modal visible={analyzeOpen} transparent animationType="slide" onRequestClose={() => setAnalyzeOpen(false)}>
+        <View style={styles.sheetWrap}>
+          <View style={styles.sheet}>
+            <View style={styles.sheetHead}>
+              <Mono color={C.ink} size={12}>VISUAL INTELLIGENCE · LAST PHOTO</Mono>
+              <Pressable onPress={() => setAnalyzeOpen(false)} hitSlop={10}>
+                <Text style={{ color: C.inkMute, fontSize: 16 }}>✕</Text>
+              </Pressable>
+            </View>
+            <ScrollView contentContainerStyle={{ paddingBottom: 20 }}>
+              <PalettePanel swatches={palette} loading={analyzing} />
+              <TextResult scan={ocr} loading={analyzing} />
+              <SceneResult labels={scene} loading={analyzing} />
+              <Mono color={C.inkFaint} size={9.5} style={{ marginTop: 14 }}>
+                Colour, text (OCR) and scene labels are all computed on-device — nothing is uploaded.
+              </Mono>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -383,6 +442,9 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#000" },
   lockBtn: { position: "absolute", top: 12, right: 14, width: 34, height: 34, borderRadius: 17, backgroundColor: "rgba(0,0,0,0.45)", alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: C.lineStrong },
   lockedWrap: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.15)" },
+  sheetWrap: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end" },
+  sheet: { maxHeight: "78%", backgroundColor: C.bg2, borderTopWidth: 1, borderTopColor: C.lineStrong, borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: 18 },
+  sheetHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 14 },
   lockedBanner: { position: "absolute", top: 12, left: 14, right: 14, backgroundColor: "rgba(0,0,0,0.55)", borderRadius: 40, paddingVertical: 8, alignItems: "center" },
   unlockBtn: { width: 84, height: 84, borderRadius: 42, borderWidth: 2, borderColor: "#fff", alignItems: "center", justifyContent: "center", overflow: "hidden" },
   unlockFill: { position: "absolute", width: 84, height: 84, borderRadius: 42, backgroundColor: C.red },

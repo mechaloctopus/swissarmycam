@@ -2,8 +2,8 @@
 
 The mobile app for [Lensii](../). Built with **Expo + React Native**, this is the
 **Phase 2 app shell** from the roadmap on the marketing site: a working camera instrument with
-Capture, Timelapse, a Lab preview, and a local-first Library — plus honest, staged placeholders
-for the modules that need native code (Studio, Screen, Attachments).
+Capture, a keyframe video Studio, Timelapse and a local-first Library — plus honest, staged
+placeholders for the parts that need hardware or cloud compute.
 
 Designed for **Android first** (targeting a Pixel 9 Pro), the code is structured so a
 near-identical **iOS** build slots in later with iOS-specific camera work (AVFoundation).
@@ -28,15 +28,13 @@ where you'd start the trial or enter a code) — see "Selling on Google Play" be
 
 | Tab | Status | Notes |
 | --- | --- | --- |
-| **Capture** | ✅ Works | **Photo + video** modes. Front/rear flip, flash (off/auto/on), **torch**, **continuous zoom slider**, rule-of-thirds / golden / square grid, electronic level (accelerometer), reticle, self-timer. Video honors the mic + resolution settings. Saves in-app + optional auto-save to Photos. **Underwater / record lock**: engage manually or auto-engage the moment recording starts — every control except a deliberate 1.2s hold-to-unlock goes dead to touch, so water pressure/droplets on the screen can't stop or change a recording. Screen stays awake for the whole take. |
+| **Capture** | ✅ Works | **Photo + video** modes. Front/rear flip, flash (off/auto/on), **torch**, **continuous zoom slider**, rule-of-thirds / golden / square grid, electronic level (accelerometer), reticle, self-timer. Video honors the mic + resolution settings. Saves in-app + optional auto-save to Photos. **Analyze** runs on-device visual intelligence over your last photo — colour palette, **OCR text extraction** and **scene/object labeling** (MLKit, fully offline), folded in from what used to be a separate Lab tab. **Underwater / record lock**: engage manually or auto-engage the moment recording starts — every control except a deliberate 1.2s hold-to-unlock goes dead to touch, so water pressure/droplets on the screen can't stop or change a recording. Screen stays awake for the whole take. |
 | **Timelapse** | ✅ Works | Intervalometer (1–60 s), live frame counter, frames saved as a set and **played back** in Library. Frame→MP4 stitching is Phase 3 (native). |
 | **Clay** | ✅ Works | **Claymation / stop-motion studio**: shoot one frame at a time with an **onion-skin guide** — the last frame renders semi-transparent over the live viewfinder so you can see exactly how far to nudge the subject. Undo last frame, adjust onion opacity, then **bake the set into a real MP4** at 8/12/24fps via a native image-sequence encoder (reuses the video-exporter module's EGL/encoder pipeline — no decoder needed for this one). |
 | **Scan** | ✅ Works | **NeRF Measure, phase one**: guided multi-angle overlapping photo capture of a room or object, saved as a set. The real, on-device half of the feature — reconstructing a scan into a 3D model and overlaying AR measurements needs cloud compute (see Tools). |
 | **Trace** | ✅ Works | **AR surface-locked trace / mural projection**: tap a real-world surface to drop an **ARCore** anchor, import a reference image, and it renders projected onto that surface — the lock comes from ARCore's own world-tracking (SLAM), not app math, so it's meant to hold steady as you move around rather than drift. Adjust opacity/size/rotation and nudge position within the lock; a separate **digital camera zoom** magnifies the view for detail work without ever touching the anchor. A "lock adjust" toggle freezes the controls once you're happy. Needs a Google-certified ARCore device; the app checks and offers to install Google Play Services for AR if it's missing. |
-| **Lab** | ✅ Works | Live viewfinder with real overlay guides + look tints, **plus on-device visual intelligence**: colour-palette analysis, **OCR text extraction**, and **scene/object labeling** (all MLKit/react-native-image-colors, offline) from a captured frame. Deeper GPU pixel analysis (edge/motion/stacking) is Phase 6. |
 | **Library** | ✅ Works | Local-first grid of **photos + videos**, fullscreen photo viewer, **photo editor** (rotate / flip / crop 1:1 → saves a non-destructive copy, via expo-image-manipulator), **video player**, **timelapse playback** (8/12/24 fps), **share**, save-to-Photos, delete. |
-| **Studio** | ✅ Works | Photo layer **compositor**: pick a base photo, add **text** + **sticker** layers, and cut out a **real GPU chroma key** (green/blue screen → transparent PNG, an SkSL shader run on-device via react-native-skia) as a draggable layer over a different base. Drag / scale / rotate / opacity, bring-to-front, **flatten & export** to Library. |
-| **Editor** | ✅ Works | **Video** editor: pick a base video, **import your own transparent PNG** (or add text, or a **green-screen clip**), then **keyframe** its position/scale/rotation/opacity over the timeline — scrub, drag, "set keyframe here," and it interpolates and plays back live, moving across the video in real time. **Export baked MP4** re-encodes for real: a native MediaCodec decode → GLES composite → MediaCodec encode pipeline draws every overlay at its interpolated position, chroma-keys green-screen clips per frame with their own decoder, and writes a new MP4, audio copied through untouched. |
+| **Studio** | ✅ Works | **The keyframe video editor** — one screen, replacing the old split Editor/Studio. Pick a base clip (gallery or Library), then layer **images, GIFs, videos and text** over it. Every layer has its own **in/out point** (pop in, pop out), **fade in/out**, optional **green-screen key**, and **keyframed** position / scale / rotation / opacity with **easing** (linear, ease-in, ease-out, ease-in-out). Drag or pinch a layer straight on the canvas and it writes a keyframe at the playhead; a **CapCut-style timeline** gives every layer a lane with draggable in/out handles, keyframe diamonds you can tap-to-seek or drag-to-retime, a scrubbable playhead and zoom. Clip-level **trim, speed (0.25×–4×), pitch-preserve toggle and mute**. Video overlay layers play **live** in the preview. **Export bakes a real MP4** — native MediaCodec decode → GLES composite → MediaCodec encode, drawing every layer at its interpolated pose for that frame's exact timestamp, honouring in/out windows and fades, chroma-keying overlay clips per frame with their own decoders. |
 | **Attachments** | ✅ Works | **Device & module inspector**: model / OS / memory (expo-device), detected camera resolutions, **real Camera2 sensor characteristics** per lens (focal lengths, apertures, ISO range, exposure range, sensor size), **real microphone hardware inventory** (type, location, directionality, position — via `AudioManager.getMicrophones()`, honestly reflecting what each device actually reports rather than assuming a mic array exists), live **sensor scan** (accelerometer / gyro / magnetometer / barometer), and an honest "no external modules detected". USB-C thermal/IR/UV & BLE shutters plug in via the native module (Phase 7). |
 | **Tools** | ✅ Works | **Unit converter** (length, volume, weight, temperature — cm↔in↔ft↔mi, gal↔L↔cups, etc.), and the **NeRF Measure** card — capture is real (see Scan tab); reconstruction into a 3D model + AR measurement overlay is honestly staged as needing cloud compute, not faked. |
 | **Settings** | ✅ Works | Full **customization hub** — see below — plus honest capability map, privacy, storage usage, reset. |
@@ -141,7 +139,7 @@ One-time setup (nobody but a project owner with GCP access can do this part):
 ## Selling on Google Play
 
 **Monetization:** Capture and Library are free forever, no account or purchase needed. Every
-other tab (Studio, Editor, Screen, Timelapse, Clay, Scan, Trace, Lab, Attachments, Tools) needs an
+other tab (Studio, Screen, Timelapse, Clay, Scan, Trace, Attachments, Tools) needs an
 active free trial, subscription, or a redeemed access code — Settings always stays free too, since
 that's where a trial starts or a code gets redeemed.
 
@@ -182,15 +180,16 @@ app/
     ├── store.ts            # Local-first capture/timelapse storage
     ├── media.ts            # Explicit "save to Photos"
     ├── components/         # Mark (logo), ui primitives, viewfinder Overlays
-    └── screens/            # Capture, Timelapse, Lab, Library, Settings, ComingSoon
+    ├── timeline.ts         # Studio's keyframe/layer model (mirrored by the native exporter)
+    └── screens/            # Capture, Studio, Timelapse, Library, Settings, …
 ```
 
 ## Notes on honesty (same as the site)
 
 Software cannot make a phone sensor see IR/UV/thermal wavelengths it physically rejects — those
 need attachments. Manual ISO/shutter/RAW capture still needs native code and is staged, not faked.
-Green-screen compositing — both photo cutouts (Studio) and per-frame video keying baked into an
-export (Editor) — plus screen recording (Screen) and frame-accurate video export are all real,
+Green-screen keying baked per-frame into a video export (Studio), screen recording (Screen), and
+frame-accurate keyframed video export are all real,
 shipped native modules — not placeholders. Screen recording uses Android's
 own system consent dialog and a persistent notification/indicator the whole time it runs; it can't
 be started or hidden without that user-visible OS-level consent. The video export pipeline is

@@ -10,9 +10,7 @@ import { Mark } from "./src/components/Mark";
 import { Mono } from "./src/components/ui";
 import CaptureScreen from "./src/screens/CaptureScreen";
 import StudioScreen from "./src/screens/StudioScreen";
-import EditorScreen from "./src/screens/EditorScreen";
 import TimelapseScreen from "./src/screens/TimelapseScreen";
-import LabScreen from "./src/screens/LabScreen";
 import AttachmentsScreen from "./src/screens/AttachmentsScreen";
 import ToolsScreen from "./src/screens/ToolsScreen";
 import LibraryScreen from "./src/screens/LibraryScreen";
@@ -27,14 +25,12 @@ type Tab = { key: string; name: string; glyph: string; kind: Kind };
 
 const TABS: Tab[] = [
   { key: "capture", name: "Capture", glyph: "◎", kind: "camera" },
-  { key: "studio", name: "Studio", glyph: "▤", kind: "plain" },
-  { key: "editor", name: "Editor", glyph: "▶", kind: "plain" },
+  { key: "studio", name: "Studio", glyph: "⧉", kind: "plain" },
   { key: "screen", name: "Screen", glyph: "▣", kind: "plain" },
   { key: "timelapse", name: "Timelapse", glyph: "⧗", kind: "camera" },
   { key: "clay", name: "Clay", glyph: "◐", kind: "camera" },
   { key: "scan", name: "Scan", glyph: "◫", kind: "camera" },
   { key: "trace", name: "Trace", glyph: "◈", kind: "camera" },
-  { key: "lab", name: "Lab", glyph: "⌬", kind: "camera" },
   { key: "attach", name: "Attachments", glyph: "⊕", kind: "plain" },
   { key: "tools", name: "Tools", glyph: "⚏", kind: "plain" },
   { key: "library", name: "Library", glyph: "▦", kind: "plain" },
@@ -51,13 +47,11 @@ function Screen({ tabKey, focused }: { tabKey: string; focused: boolean }) {
   switch (tabKey) {
     case "capture": return <CaptureScreen focused={focused} />;
     case "studio": return <StudioScreen focused={focused} />;
-    case "editor": return <EditorScreen focused={focused} />;
     case "screen": return <ScreenRecordScreen />;
     case "timelapse": return <TimelapseScreen focused={focused} />;
     case "clay": return <ClaymationScreen focused={focused} />;
     case "scan": return <RoomScanScreen focused={focused} />;
     case "trace": return <TraceScreen focused={focused} />;
-    case "lab": return <LabScreen focused={focused} />;
     case "attach": return <AttachmentsScreen focused={focused} />;
     case "tools": return <ToolsScreen />;
     case "library": return <LibraryScreen focused={focused} />;
@@ -146,8 +140,8 @@ function PaywallGate({ onOpenSettings }: { onOpenSettings: () => void }) {
       <Mark size={72} />
       <Text style={styles.gateTitle}>Part of the full toolkit</Text>
       <Text style={styles.gateText}>
-        Capture and Library are always free. Studio, Editor, Screen, Timelapse, Clay, Scan,
-        Trace, Lab, Attachments, and Tools are unlocked with a trial, subscription, or access code.
+        Capture and Library are always free. Studio, Screen, Timelapse, Clay, Scan, Trace,
+        Attachments, and Tools are unlocked with a trial, subscription, or access code.
       </Text>
       {available ? (
         <Pressable onPress={buy} disabled={busy} style={[styles.gateBtn, busy && { opacity: 0.6 }]}>

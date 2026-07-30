@@ -32,8 +32,19 @@ private const val FRAME_WAIT_TIMEOUT_MS = 2_500L
  */
 class VideoExportEngine(private val context: Context) {
 
-  fun export(videoPath: String, outputPath: String, layersJson: String, canvasWidth: Int, canvasHeight: Int) {
+  fun export(
+    videoPath: String,
+    outputPath: String,
+    layersJson: String,
+    canvasWidth: Int,
+    canvasHeight: Int,
+    clipJson: String
+  ) {
     val layers = LayerParser.parse(layersJson)
+    val clip = LayerParser.parseClipOptions(clipJson)
+    val trimInUs = (clip.trimIn * 1_000_000L).toLong().coerceAtLeast(0L)
+    val trimOutUs = if (clip.trimOut > clip.trimIn) (clip.trimOut * 1_000_000L).toLong() else Long.MAX_VALUE
+    val speed = clip.speed.coerceAtLeast(0.01)
 
     val videoExtractor = MediaExtractor().apply { setDataSource(videoPath) }
     val videoTrackIndex = findTrack(videoExtractor, "video/")
@@ -44,10 +55,21 @@ class VideoExportEngine(private val context: Context) {
     val videoHeight = inputFormat.getInteger(MediaFormat.KEY_HEIGHT)
     val videoMime = inputFormat.getString(MediaFormat.KEY_MIME)!!
 
+    videoExtractor.seekTo(trimInUs, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
+
     val audioExtractor = MediaExtractor().apply { setDataSource(videoPath) }
     val audioTrackIndex = findTrack(audioExtractor, "audio/")
-    val hasAudio = audioTrackIndex >= 0
-    if (hasAudio) audioExtractor.selectTrack(audioTrackIndex)
+    // Audio is passed through untouched, which is only correct at 1x. A speed
+    // change would need real resampling (pitch-shifted) or time-stretching
+    // (pitch-preserved) — neither is built yet, so rather than emit audio that
+    // drifts out of sync with the retimed video, a speed-changed export is
+    // silent and the UI says so up front.
+    val speedChangesAudio = speed != 1.0
+    val hasAudio = audioTrackIndex >= 0 && !clip.muted && !speedChangesAudio
+    if (hasAudio) {
+      audioExtractor.selectTrack(audioTrackIndex)
+      audioExtractor.seekTo(trimInUs, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
+    }
     val audioFormat = if (hasAudio) audioExtractor.getTrackFormat(audioTrackIndex) else null
 
     val bitRate = (videoWidth * videoHeight * 4).coerceAtLeast(4_000_000)
@@ -160,7 +182,10 @@ class VideoExportEngine(private val context: Context) {
           if (inIndex >= 0) {
             val buf = decoder.getInputBuffer(inIndex)!!
             val sampleSize = videoExtractor.readSampleData(buf, 0)
-            if (sampleSize < 0) {
+            // Stop feeding once past the trim range — the decoder still needs
+            // to drain what's already queued, so EOS is signalled here rather
+            // than breaking out of the loop.
+            if (sampleSize < 0 || videoExtractor.sampleTime > trimOutUs) {
               decoder.queueInputBuffer(inIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
               inputDone = true
             } else {
@@ -173,9 +198,12 @@ class VideoExportEngine(private val context: Context) {
         if (!decoderDone) {
           val outIndex = decoder.dequeueOutputBuffer(bufferInfo, TIMEOUT_US)
           if (outIndex >= 0) {
-            val doRender = bufferInfo.size > 0
             val isEos = (bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0
             val framePtsUs = bufferInfo.presentationTimeUs
+            // Seeking to trimIn lands on the preceding sync frame, so frames
+            // before the trim point still decode — they just must not be drawn.
+            val inTrimRange = framePtsUs >= trimInUs && framePtsUs <= trimOutUs
+            val doRender = bufferInfo.size > 0 && inTrimRange
             decoder.releaseOutputBuffer(outIndex, doRender)
 
             if (doRender) {
@@ -193,23 +221,43 @@ class VideoExportEngine(private val context: Context) {
 
               GLES20.glEnable(GLES20.GL_BLEND)
               GLES20.glBlendFunc(GLES20.GL_SRC_ALPHA, GLES20.GL_ONE_MINUS_SRC_ALPHA)
-              val frameTimeSec = framePtsUs / 1_000_000.0
+              // Layers are keyed against timeline (output) time, so trim and
+              // speed have to be undone here — the same conversion the preview
+              // does in StudioScreen.
+              val timelineSec = (framePtsUs - trimInUs) / 1_000_000.0 / speed
 
               for (ov in overlays) {
-                val t = LayerParser.transformAt(ov.layer, frameTimeSec)
+                val alpha = LayerParser.alphaAt(ov.layer, timelineSec)
+                if (alpha <= 0f) continue
+                val t = LayerParser.transformAt(ov.layer, timelineSec)
                 val model = modelMatrixFor(t, ov.layoutW, ov.layoutH, ov.naturalW, ov.naturalH)
-                overlayProgram.draw(model, identity, ov.texId, (t.opacity / 100.0).toFloat())
+                overlayProgram.draw(model, identity, ov.texId, alpha)
               }
 
               for (vo in videoOverlays) {
-                if (!vo.decoder.advanceTo(framePtsUs)) continue
-                val t = LayerParser.transformAt(vo.layer, frameTimeSec)
+                val alpha = LayerParser.alphaAt(vo.layer, timelineSec)
+                if (alpha <= 0f) continue
+                // Overlay clips play from their own start when the layer comes
+                // in, so they're driven by time-since-tIn rather than the base
+                // video's timestamp.
+                val overlayPtsUs = ((timelineSec - vo.layer.tIn) * 1_000_000.0).toLong().coerceAtLeast(0L)
+                if (!vo.decoder.advanceTo(overlayPtsUs)) continue
+                val t = LayerParser.transformAt(vo.layer, timelineSec)
                 val model = modelMatrixFor(t, vo.naturalW, vo.naturalH, vo.naturalW, vo.naturalH)
-                val keyColor = vo.layer.keyColor ?: listOf(0.06f, 0.72f, 0.2f)
-                chromaProgram.draw(model, vo.decoder.texMatrix, vo.decoder.texId, keyColor, vo.layer.threshold, vo.layer.smoothing, (t.opacity / 100.0).toFloat())
+                if (vo.layer.keyColor != null) {
+                  chromaProgram.draw(model, vo.decoder.texMatrix, vo.decoder.texId, vo.layer.keyColor, vo.layer.threshold, vo.layer.smoothing, alpha)
+                } else {
+                  // Chroma off: an impossible key colour keys nothing out. The
+                  // smoothing stays nonzero because smoothstep(e, e, x) with
+                  // equal edges is undefined in GLSL.
+                  chromaProgram.draw(model, vo.decoder.texMatrix, vo.decoder.texId, listOf(-1f, -1f, -1f), 0f, 0.001f, alpha)
+                }
               }
 
-              windowSurface.setPresentationTime(framePtsUs * 1000)
+              // Speed is applied by restamping output frames; the encoder is
+              // otherwise unaware the timeline was retimed.
+              val outPtsUs = ((framePtsUs - trimInUs) / speed).toLong().coerceAtLeast(0L)
+              windowSurface.setPresentationTime(outPtsUs * 1000)
               windowSurface.swapBuffers()
             }
 
@@ -246,8 +294,9 @@ class VideoExportEngine(private val context: Context) {
         }
       }
 
-      // Audio is copied through untouched — written after video since MediaMuxer
-      // does not require samples from different tracks to be interleaved in order.
+      // Audio is copied through untouched (1x only — see hasAudio above),
+      // shifted so the trim point becomes t=0. Written after video because
+      // MediaMuxer does not require cross-track samples to be interleaved.
       if (hasAudio && muxerAudioTrack >= 0) {
         val audioBufferInfo = MediaCodec.BufferInfo()
         val audioBuf = ByteBuffer.allocate(1 shl 20)
@@ -255,8 +304,12 @@ class VideoExportEngine(private val context: Context) {
           audioBuf.clear()
           val size = audioExtractor.readSampleData(audioBuf, 0)
           if (size < 0) break
-          audioBufferInfo.set(0, size, audioExtractor.sampleTime, audioExtractor.sampleFlags)
-          muxer.writeSampleData(muxerAudioTrack, audioBuf, audioBufferInfo)
+          val ptsUs = audioExtractor.sampleTime
+          if (ptsUs > trimOutUs) break
+          if (ptsUs >= trimInUs) {
+            audioBufferInfo.set(0, size, ptsUs - trimInUs, audioExtractor.sampleFlags)
+            muxer.writeSampleData(muxerAudioTrack, audioBuf, audioBufferInfo)
+          }
           audioExtractor.advance()
         }
       }
