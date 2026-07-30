@@ -90,7 +90,9 @@ class VideoExportEngine(private val context: Context) {
 
     val videoProgram = TextureProgram(isExternal = true)
     val overlayProgram = TextureProgram(isExternal = false)
-    val chromaProgram = ChromaKeyProgram()
+    val chromaProgram = ChromaKeyProgram(isExternal = true)
+    // Stills that opt into a key go through the 2D variant of the same shader.
+    val stillChromaProgram = ChromaKeyProgram(isExternal = false)
     val oesTextureId = videoProgram.createTexture()
 
     val glThread = HandlerThread("LensiiVideoExportGL").apply { start() }
@@ -231,7 +233,12 @@ class VideoExportEngine(private val context: Context) {
                 if (alpha <= 0f) continue
                 val t = LayerParser.transformAt(ov.layer, timelineSec)
                 val model = modelMatrixFor(t, ov.layoutW, ov.layoutH, ov.naturalW, ov.naturalH)
-                overlayProgram.draw(model, identity, ov.texId, alpha)
+                val key = ov.layer.keyColor
+                if (key != null) {
+                  stillChromaProgram.draw(model, identity, ov.texId, key, ov.layer.threshold, ov.layer.smoothing, alpha)
+                } else {
+                  overlayProgram.draw(model, identity, ov.texId, alpha)
+                }
               }
 
               for (vo in videoOverlays) {

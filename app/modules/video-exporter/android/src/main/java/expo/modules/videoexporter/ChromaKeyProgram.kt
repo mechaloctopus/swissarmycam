@@ -28,13 +28,12 @@ private const val VERTEX_SHADER = """
   }
 """
 
-// Same distance + smoothstep key as chroma.ts's SkSL shader (Studio's photo cutout),
-// applied per-frame here to a decoded video's external OES texture.
-private const val FRAGMENT_SHADER_CHROMA = """
-  #extension GL_OES_EGL_image_external : require
-  precision mediump float;
+// A distance + smoothstep key. Two variants because a decoded video frame is
+// an external OES texture while an imported still is a regular 2D texture, and
+// GLSL needs a different sampler type for each — same split TextureProgram
+// already makes. The body is otherwise identical so both paths key alike.
+private const val CHROMA_BODY = """
   varying vec2 vTextureCoord;
-  uniform samplerExternalOES sTexture;
   uniform vec3 uKeyColor;
   uniform float uThreshold;
   uniform float uSmoothing;
@@ -43,20 +42,33 @@ private const val FRAGMENT_SHADER_CHROMA = """
     vec4 c = texture2D(sTexture, vTextureCoord);
     float dist = distance(c.rgb, uKeyColor);
     float keyAlpha = smoothstep(uThreshold, uThreshold + uSmoothing, dist);
-    gl_FragColor = vec4(c.rgb, keyAlpha * uAlpha);
+    gl_FragColor = vec4(c.rgb, keyAlpha * uAlpha * c.a);
   }
 """
 
-/**
- * Draws a chroma-keyed external OES texture (a decoded green/blue-screen
- * video frame) as a transparent-background quad. A separate, additive file
- * from TextureProgram so the existing image/text/base-video draw paths stay
- * untouched by this feature.
- */
-class ChromaKeyProgram {
-  val textureTarget: Int = GLES11Ext.GL_TEXTURE_EXTERNAL_OES
+// Precision is declared before the sampler deliberately: samplerExternalOES
+// has no default precision under GL_OES_EGL_image_external, and some drivers
+// reject it if a float precision hasn't been established first. This is the
+// ordering the previously-shipping shader used, so it's preserved verbatim.
+private const val FRAGMENT_SHADER_CHROMA_EXT =
+  "#extension GL_OES_EGL_image_external : require\n" +
+    "precision mediump float;\n" +
+    "uniform samplerExternalOES sTexture;\n" + CHROMA_BODY
 
-  private val program = createProgram(VERTEX_SHADER, FRAGMENT_SHADER_CHROMA)
+private const val FRAGMENT_SHADER_CHROMA_2D =
+  "precision mediump float;\n" +
+    "uniform sampler2D sTexture;\n" + CHROMA_BODY
+
+/**
+ * Draws a chroma-keyed texture as a transparent-background quad. `isExternal`
+ * picks the sampler type: true for a decoded video frame (external OES),
+ * false for an imported still's 2D texture — so green-screen PNGs/JPEGs key
+ * through exactly the same shader maths as green-screen clips.
+ */
+class ChromaKeyProgram(isExternal: Boolean = true) {
+  val textureTarget: Int = if (isExternal) GLES11Ext.GL_TEXTURE_EXTERNAL_OES else GLES20.GL_TEXTURE_2D
+
+  private val program = createProgram(VERTEX_SHADER, if (isExternal) FRAGMENT_SHADER_CHROMA_EXT else FRAGMENT_SHADER_CHROMA_2D)
   private val positionHandle = GLES20.glGetAttribLocation(program, "aPosition")
   private val texCoordHandle = GLES20.glGetAttribLocation(program, "aTextureCoord")
   private val mvpMatrixHandle = GLES20.glGetUniformLocation(program, "uMVPMatrix")
