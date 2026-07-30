@@ -20,14 +20,16 @@ import { Timeline } from "../components/Timeline";
 import { listMedia, newVideoOutputPath } from "../store";
 import { pickImageFromLibrary, pickVideoFromLibrary, saveToPhotos } from "../media";
 import { useSettings } from "../settings";
-import { isVideoExportAvailable, exportOverlaidVideo } from "video-exporter";
+import { isVideoExportAvailable, exportTimeline } from "video-exporter";
 import {
   Layer,
   Keyframe,
   BaseClip,
   Easing,
+  Transition,
   DEFAULT_CHROMA,
   makeKeyframe,
+  makeClip,
   transformAt,
   alphaAt,
   isVisibleAt,
@@ -36,7 +38,12 @@ import {
   removeKeyframeAt,
   retimeKeyframe,
   clipOutputDuration,
+  clipStartTimes,
+  totalDuration,
+  clipAtTime,
+  dipAmountAt,
   serializeLayers,
+  serializeClips,
   IMAGE_BOX,
   VIDEO_BOX_W,
   VIDEO_BOX_H,
@@ -57,9 +64,11 @@ const nextId = () => `L${++seq}`;
 export default function StudioScreen({ focused }: { focused: boolean }) {
   const { settings } = useSettings();
   const [videos, setVideos] = useState<string[]>([]);
-  const [clip, setClip] = useState<BaseClip | null>(null);
+  const [clips, setClips] = useState<BaseClip[]>([]);
+  const [activeIndex, setActiveIndex] = useState(0);
   const [layers, setLayers] = useState<Layer[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
   const [canvas, setCanvas] = useState({ w: 0, h: 0 });
   const [tab, setTab] = useState<PanelTab>("layers");
   const [pps, setPps] = useState(60);
@@ -70,8 +79,14 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
   const [exporting, setExporting] = useState(false);
   const exportAvailable = useMemo(() => isVideoExportAvailable(), []);
 
-  const player = useVideoPlayer(clip?.uri ?? "", (p) => {
-    p.loop = true;
+  const activeClip: BaseClip | null = clips[activeIndex] ?? null;
+  const starts = useMemo(() => clipStartTimes(clips), [clips]);
+  const timelineDuration = useMemo(() => totalDuration(clips), [clips]);
+
+  const player = useVideoPlayer(activeClip?.uri ?? "", (p) => {
+    // No looping: the sequence advances clip to clip, and the end of the
+    // last clip is the end of the timeline.
+    p.loop = false;
   });
   const [sourceTime, setSourceTime] = useState(0);
   const [sourceDuration, setSourceDuration] = useState(0);
@@ -81,43 +96,77 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
   useEventListener(player, "statusChange", () => setSourceDuration(player.duration || 0));
   useEventListener(player, "playingChange", (p) => setPlaying(p.isPlaying));
 
-  // Layers are keyed against timeline (output) time; the player runs in source
-  // time. Keeping that conversion in one place is what lets trim + speed work
-  // without every keyframe lookup needing to know about them.
-  const speed = clip?.speed ?? 1;
-  const trimIn = clip?.trimIn ?? 0;
-  const timelineTime = Math.max(0, (sourceTime - trimIn) / speed);
-  const timelineDuration = clip ? clipOutputDuration(clip) : 0;
+  // Layers are keyed against global timeline (output) time; the player runs in
+  // one clip's source time. This is the only place the two are reconciled.
+  const timelineTime = activeClip
+    ? (starts[activeIndex] ?? 0) + Math.max(0, (sourceTime - activeClip.trimIn) / Math.max(0.01, activeClip.speed))
+    : 0;
 
+  const wasPlaying = useRef(false);
+  useEffect(() => {
+    wasPlaying.current = playing;
+  }, [playing]);
+
+  // Declared before seekTimeline because that callback writes to it.
+  const pendingSeek = useRef<number | null>(null);
+
+  /** Moves the playhead anywhere on the global timeline, switching clip if needed. */
   const seekTimeline = useCallback(
     (t: number) => {
-      const target = trimIn + Math.max(0, t) * speed;
-      player.currentTime = target;
-      setSourceTime(target);
+      const hit = clipAtTime(clips, Math.max(0, t));
+      if (!hit) return;
+      const srcTarget = hit.clip.trimIn + hit.localT * Math.max(0.01, hit.clip.speed);
+      if (hit.index !== activeIndex) {
+        setActiveIndex(hit.index);
+        // The source swap is async; seek once the new clip is loaded.
+        pendingSeek.current = srcTarget;
+      } else {
+        player.currentTime = srcTarget;
+        setSourceTime(srcTarget);
+      }
     },
-    [player, trimIn, speed]
+    [clips, activeIndex, player]
   );
 
-  // Preview honours the clip's speed/pitch/mute so what you see is what bakes.
   useEffect(() => {
-    if (!clip) return;
-    player.playbackRate = clip.speed;
-    player.preservesPitch = clip.preservePitch;
-    player.muted = clip.muted;
-  }, [player, clip]);
+    if (pendingSeek.current == null || !activeClip) return;
+    const target = pendingSeek.current;
+    pendingSeek.current = null;
+    // A frame's grace for the new source to attach before seeking into it.
+    const id = setTimeout(() => {
+      player.currentTime = target;
+      setSourceTime(target);
+      if (wasPlaying.current) player.play();
+    }, 60);
+    return () => clearTimeout(id);
+  }, [activeIndex, activeClip, player]);
 
-  // Loop inside the trim range rather than the whole source file.
+  // Preview honours the active clip's speed/pitch/mute so what you see bakes.
   useEffect(() => {
-    if (!clip || clip.trimOut <= clip.trimIn) return;
-    if (sourceTime > clip.trimOut) player.currentTime = clip.trimIn;
-  }, [sourceTime, clip, player]);
+    if (!activeClip) return;
+    player.playbackRate = activeClip.speed;
+    player.preservesPitch = activeClip.preservePitch;
+    player.muted = activeClip.muted;
+  }, [player, activeClip]);
 
-  // trimOut starts as 0 (unknown) and resolves once the player reports length.
+  // Roll onto the next clip when this one passes its out point.
   useEffect(() => {
-    if (clip && clip.trimOut === 0 && sourceDuration > 0) {
-      setClip((c) => (c ? { ...c, trimOut: sourceDuration } : c));
+    if (!activeClip || activeClip.trimOut <= activeClip.trimIn) return;
+    if (sourceTime < activeClip.trimOut) return;
+    if (activeIndex < clips.length - 1) {
+      const next = clips[activeIndex + 1];
+      setActiveIndex(activeIndex + 1);
+      pendingSeek.current = next.trimIn;
+    } else if (playing) {
+      player.pause();
     }
-  }, [clip, sourceDuration]);
+  }, [sourceTime, activeClip, activeIndex, clips, player, playing]);
+
+  // trimOut starts at 0 (unknown) and resolves once the player reports length.
+  useEffect(() => {
+    if (!activeClip || activeClip.trimOut !== 0 || sourceDuration <= 0) return;
+    setClips((cs) => cs.map((c, i) => (i === activeIndex ? { ...c, trimOut: sourceDuration } : c)));
+  }, [activeClip, sourceDuration, activeIndex]);
 
   const loadVideos = useCallback(async () => {
     const m = await listMedia();
@@ -142,12 +191,50 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
     setLayers((ls) => ls.map((l) => (l.id === id ? fn(l) : l)));
   }, []);
 
-  const openClip = (uri: string) => {
-    setClip({ uri, trimIn: 0, trimOut: 0, speed: 1, preservePitch: true, muted: false });
+  const startWithClip = (uri: string) => {
+    const c = makeClip(uri, `C${++seq}`);
+    setClips([c]);
+    setActiveIndex(0);
+    setSelectedClipId(c.id);
     setLayers([]);
     setSelectedId(null);
     setTab("layers");
   };
+
+  const appendClip = async () => {
+    setBusy(true);
+    try {
+      const uri = await pickVideoFromLibrary();
+      if (!uri) return flash("Nothing selected");
+      const c = makeClip(uri, `C${++seq}`);
+      setClips((cs) => [...cs, c]);
+      setSelectedClipId(c.id);
+      flash("Clip added to the end");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const patchClip = (id: string, patch: Partial<BaseClip>) =>
+    setClips((cs) => cs.map((c) => (c.id === id ? { ...c, ...patch } : c)));
+
+  const removeClip = (id: string) => {
+    setClips((cs) => {
+      const next = cs.filter((c) => c.id !== id);
+      setActiveIndex((i) => Math.max(0, Math.min(i, next.length - 1)));
+      return next;
+    });
+    setSelectedClipId(null);
+  };
+
+  const moveClip = (index: number, dir: -1 | 1) =>
+    setClips((cs) => {
+      const j = index + dir;
+      if (j < 0 || j >= cs.length) return cs;
+      const next = [...cs];
+      [next[index], next[j]] = [next[j], next[index]];
+      return next;
+    });
 
   const addLayer = (partial: Partial<Layer> & { kind: Layer["kind"] }) => {
     const id = nextId();
@@ -216,19 +303,13 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
   };
 
   const runExport = async () => {
-    if (!clip || !exportAvailable || exporting) return;
+    if (clips.length === 0 || !exportAvailable || exporting) return;
     if (layers.length === 0) return flash("Add a layer first");
     if (canvas.w === 0 || canvas.h === 0) return flash("Give the preview a moment to lay out");
     setExporting(true);
     try {
       const { uri, path } = await newVideoOutputPath();
-      await exportOverlaidVideo(clip.uri, path, serializeLayers(layers), canvas.w, canvas.h, {
-        trimIn: clip.trimIn,
-        trimOut: clip.trimOut,
-        speed: clip.speed,
-        preservePitch: clip.preservePitch,
-        muted: clip.muted,
-      });
+      await exportTimeline(path, serializeLayers(layers), serializeClips(clips), canvas.w, canvas.h);
       flash("Exported to Library");
       if (settings.autoSaveToPhotos) saveToPhotos(uri);
       loadVideos();
@@ -240,7 +321,7 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
   };
 
   // ---------------------------------------------------------------- picker --
-  if (!clip) {
+  if (clips.length === 0) {
     return (
       <View style={styles.root}>
         <View style={styles.head}>
@@ -249,15 +330,15 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
         <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 40 }}>
           <Text style={styles.title}>Pick a base clip</Text>
           <Text style={styles.body}>
-            Everything layers over one base video — images, GIFs, green-screen clips and text, each
-            with its own in/out point and keyframed motion.
+            Build a sequence of clips, then layer images, GIFs, videos and text over them — each
+            layer with its own in/out point, fades and keyframed motion.
           </Text>
           <Pressable
             onPress={async () => {
               setBusy(true);
               try {
                 const uri = await pickVideoFromLibrary();
-                if (uri) openClip(uri);
+                if (uri) startWithClip(uri);
               } finally {
                 setBusy(false);
               }
@@ -273,7 +354,7 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
               <Text style={styles.sub}>From Library ({videos.length})</Text>
               <View style={styles.grid}>
                 {videos.map((u) => (
-                  <Pressable key={u} onPress={() => openClip(u)} style={styles.videoCell}>
+                  <Pressable key={u} onPress={() => startWithClip(u)} style={styles.videoCell}>
                     <Text style={{ color: C.inkSoft, fontSize: 20 }}>▶</Text>
                     <Mono color={C.inkMute} size={9} style={{ marginTop: 6 }}>
                       {u.split("/").pop()?.slice(0, 14)}
@@ -293,8 +374,8 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
   return (
     <View style={styles.root}>
       <View style={styles.head}>
-        <Pressable onPress={() => setClip(null)} hitSlop={8}>
-          <Mono color={C.inkMute} size={11}>‹ clips</Mono>
+        <Pressable onPress={() => { setClips([]); setActiveIndex(0); }} hitSlop={8}>
+          <Mono color={C.inkMute} size={11}>‹ new</Mono>
         </Pressable>
         <Mono color={C.inkMute} size={11}>
           {layers.length} LAYER{layers.length === 1 ? "" : "S"}
@@ -331,6 +412,11 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
             onPinch={(s) => patchLayer(l.id, (cur) => writeTransformAt(cur, timelineTime, { scale: s }))}
           />
         ))}
+        {/* Dip transitions darken the preview exactly as they will the bake. */}
+        <View
+          pointerEvents="none"
+          style={[StyleSheet.absoluteFill, { backgroundColor: "#000", opacity: dipAmountAt(clips, timelineTime) }]}
+        />
       </View>
 
       <View style={styles.transport}>
@@ -453,7 +539,22 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
         )}
 
         {tab === "clip" && (
-          <ClipPanel clip={clip} sourceDuration={sourceDuration} onPatch={(p) => setClip((c) => (c ? { ...c, ...p } : c))} />
+          <ClipPanel
+            clips={clips}
+            starts={starts}
+            activeIndex={activeIndex}
+            selectedClipId={selectedClipId}
+            sourceDuration={sourceDuration}
+            busy={busy}
+            onSelectClip={(id, index) => {
+              setSelectedClipId(id);
+              seekTimeline(starts[index] ?? 0);
+            }}
+            onPatchClip={patchClip}
+            onRemoveClip={removeClip}
+            onMoveClip={moveClip}
+            onAppendClip={appendClip}
+          />
         )}
       </ScrollView>
 
@@ -681,65 +782,163 @@ function AnimatePanel({
 }
 
 function ClipPanel({
-  clip,
+  clips,
+  starts,
+  activeIndex,
+  selectedClipId,
   sourceDuration,
-  onPatch,
+  busy,
+  onSelectClip,
+  onPatchClip,
+  onRemoveClip,
+  onMoveClip,
+  onAppendClip,
 }: {
-  clip: BaseClip;
+  clips: BaseClip[];
+  starts: number[];
+  activeIndex: number;
+  selectedClipId: string | null;
   sourceDuration: number;
-  onPatch: (p: Partial<BaseClip>) => void;
+  busy: boolean;
+  onSelectClip: (id: string, index: number) => void;
+  onPatchClip: (id: string, patch: Partial<BaseClip>) => void;
+  onRemoveClip: (id: string) => void;
+  onMoveClip: (index: number, dir: -1 | 1) => void;
+  onAppendClip: () => void;
 }) {
-  const max = Math.max(sourceDuration, 0.1);
+  const selected = clips.find((c) => c.id === selectedClipId) ?? null;
+  const selectedIndex = clips.findIndex((c) => c.id === selectedClipId);
+  // Only the clip currently loaded in the player has a known source length;
+  // for the others the slider is capped by whatever trim they already carry.
+  const max = selected
+    ? selectedIndex === activeIndex && sourceDuration > 0
+      ? sourceDuration
+      : Math.max(selected.trimOut, 0.1)
+    : 0.1;
+
   return (
     <View style={{ gap: 4 }}>
-      <Text style={styles.groupLabel}>Trim (source time)</Text>
-      <Ctrl label={`Start · ${clip.trimIn.toFixed(1)}s`}>
-        <Slider value={clip.trimIn} min={0} max={max} step={0.1} onChange={(v) => onPatch({ trimIn: Math.min(v, clip.trimOut - 0.2) })} width={132} />
-      </Ctrl>
-      <Ctrl label={`End · ${clip.trimOut.toFixed(1)}s`}>
-        <Slider value={clip.trimOut} min={0} max={max} step={0.1} onChange={(v) => onPatch({ trimOut: Math.max(v, clip.trimIn + 0.2) })} width={132} />
-      </Ctrl>
+      <View style={styles.rowBetween}>
+        <Text style={styles.groupLabelFlush}>Sequence ({clips.length})</Text>
+        <Pressable onPress={onAppendClip} disabled={busy} style={[styles.addClipBtn, busy && { opacity: 0.5 }]}>
+          <Mono color="#fff" size={10.5}>+ Add clip</Mono>
+        </Pressable>
+      </View>
 
-      <Text style={styles.groupLabel}>Speed</Text>
-      <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>
-        {[0.25, 0.5, 1, 1.5, 2, 3, 4].map((s) => (
-          <Pressable key={s} onPress={() => onPatch({ speed: s })} style={[styles.speedChip, clip.speed === s && styles.speedChipOn]}>
-            <Text style={{ color: clip.speed === s ? "#fff" : C.inkSoft, fontFamily: F.mono, fontSize: 11 }}>{s}×</Text>
+      <View style={{ gap: 8, marginTop: 8 }}>
+        {clips.map((c, i) => (
+          <Pressable
+            key={c.id}
+            onPress={() => onSelectClip(c.id, i)}
+            style={[styles.layerRow, c.id === selectedClipId && styles.layerRowOn]}
+          >
+            <View style={[styles.layerThumb, styles.layerThumbAlt]}>
+              <Mono color={i === activeIndex ? C.redBright : C.inkMute} size={11}>{i + 1}</Mono>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Mono color={C.ink} size={11}>{c.uri.split("/").pop()?.slice(0, 20) ?? "clip"}</Mono>
+              <Mono color={C.inkFaint} size={9.5} style={{ marginTop: 2 }}>
+                starts {(starts[i] ?? 0).toFixed(1)}s · {clipOutputDuration(c).toFixed(1)}s
+                {c.speed !== 1 ? ` · ${c.speed}×` : ""}
+                {i > 0 && c.transition === "dip" ? " · dip" : ""}
+              </Mono>
+            </View>
+            <View style={{ flexDirection: "row", gap: 4 }}>
+              <Pressable onPress={() => onMoveClip(i, -1)} hitSlop={6} style={styles.orderBtn}>
+                <Text style={styles.orderText}>▲</Text>
+              </Pressable>
+              <Pressable onPress={() => onMoveClip(i, 1)} hitSlop={6} style={styles.orderBtn}>
+                <Text style={styles.orderText}>▼</Text>
+              </Pressable>
+            </View>
           </Pressable>
         ))}
       </View>
-      <Mono color={C.inkFaint} size={9.5} style={{ marginTop: 6 }}>
-        Output length {clipOutputDuration(clip).toFixed(1)}s
-      </Mono>
 
-      {clip.speed !== 1 && (
-        <View style={styles.warnBox}>
-          <Mono color={C.device} size={10}>
-            Heads up: the preview plays speed-changed audio (both pitch modes), but a baked export at
-            any speed other than 1× is currently exported silent. Retimed audio needs real resampling
-            or time-stretching, which isn't built yet — video speed itself bakes correctly.
+      {!selected ? (
+        <Mono color={C.inkFaint} size={11} style={{ marginTop: 14 }}>Tap a clip above to trim it, set its speed, or give it a transition.</Mono>
+      ) : (
+        <>
+          {selectedIndex > 0 && (
+            <>
+              <Text style={styles.groupLabel}>Transition in</Text>
+              <Ctrl label="Style">
+                <Segmented
+                  options={["none", "dip"] as const}
+                  value={selected.transition}
+                  onChange={(v: Transition) => onPatchClip(selected.id, { transition: v })}
+                  format={(v) => (v === "none" ? "Cut" : "Dip to black")}
+                />
+              </Ctrl>
+              {selected.transition === "dip" && (
+                <Ctrl label={`Length · ${selected.transitionDur.toFixed(1)}s`}>
+                  <Slider value={selected.transitionDur} min={0.2} max={2} step={0.1} onChange={(v) => onPatchClip(selected.id, { transitionDur: v })} width={132} />
+                </Ctrl>
+              )}
+            </>
+          )}
+
+          <Text style={styles.groupLabel}>Trim (source time)</Text>
+          <Ctrl label={`Start · ${selected.trimIn.toFixed(1)}s`}>
+            <Slider value={selected.trimIn} min={0} max={max} step={0.1} onChange={(v) => onPatchClip(selected.id, { trimIn: Math.min(v, selected.trimOut - 0.2) })} width={132} />
+          </Ctrl>
+          <Ctrl label={`End · ${selected.trimOut.toFixed(1)}s`}>
+            <Slider value={selected.trimOut} min={0} max={max} step={0.1} onChange={(v) => onPatchClip(selected.id, { trimOut: Math.max(v, selected.trimIn + 0.2) })} width={132} />
+          </Ctrl>
+          {selectedIndex !== activeIndex && (
+            <Mono color={C.inkFaint} size={9}>
+              Tap this clip to load it in the player for exact trimming.
+            </Mono>
+          )}
+
+          <Text style={styles.groupLabel}>Speed</Text>
+          <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>
+            {[0.25, 0.5, 1, 1.5, 2, 3, 4].map((sp) => (
+              <Pressable key={sp} onPress={() => onPatchClip(selected.id, { speed: sp })} style={[styles.speedChip, selected.speed === sp && styles.speedChipOn]}>
+                <Text style={{ color: selected.speed === sp ? "#fff" : C.inkSoft, fontFamily: F.mono, fontSize: 11 }}>{sp}×</Text>
+              </Pressable>
+            ))}
+          </View>
+          <Mono color={C.inkFaint} size={9.5} style={{ marginTop: 6 }}>
+            This clip runs {clipOutputDuration(selected).toFixed(1)}s on the timeline
           </Mono>
-        </View>
+
+          <View style={[styles.rowBetween, { marginTop: 16 }]}>
+            <View style={{ flex: 1, paddingRight: 12 }}>
+              <Mono color={C.inkSoft} size={11}>Keep original pitch</Mono>
+              <Mono color={C.inkFaint} size={9.5} style={{ marginTop: 2 }}>
+                Off = chipmunk / slow-mo voice, the classic speed-change sound.
+              </Mono>
+            </View>
+            <Pressable onPress={() => onPatchClip(selected.id, { preservePitch: !selected.preservePitch })} style={[styles.pill, selected.preservePitch && styles.pillOn]}>
+              <Mono color={selected.preservePitch ? "#fff" : C.inkMute} size={10}>{selected.preservePitch ? "ON" : "OFF"}</Mono>
+            </Pressable>
+          </View>
+
+          <View style={[styles.rowBetween, { marginTop: 12 }]}>
+            <Mono color={C.inkSoft} size={11}>Mute this clip</Mono>
+            <Pressable onPress={() => onPatchClip(selected.id, { muted: !selected.muted })} style={[styles.pill, selected.muted && styles.pillOn]}>
+              <Mono color={selected.muted ? "#fff" : C.inkMute} size={10}>{selected.muted ? "ON" : "OFF"}</Mono>
+            </Pressable>
+          </View>
+
+          {selected.speed !== 1 && (
+            <View style={styles.warnBox}>
+              <Mono color={C.device} size={10}>
+                The preview plays speed-changed audio (both pitch modes), but in a baked export this
+                clip is silent — retimed audio needs real resampling or time-stretching, which isn't
+                built yet. The video speed itself bakes correctly.
+              </Mono>
+            </View>
+          )}
+
+          {clips.length > 1 && (
+            <Pressable onPress={() => onRemoveClip(selected.id)} style={styles.removeClipBtn}>
+              <Mono color={C.red} size={11}>Remove this clip</Mono>
+            </Pressable>
+          )}
+        </>
       )}
-
-      <View style={[styles.rowBetween, { marginTop: 16 }]}>
-        <View style={{ flex: 1, paddingRight: 12 }}>
-          <Mono color={C.inkSoft} size={11}>Keep original pitch</Mono>
-          <Mono color={C.inkFaint} size={9.5} style={{ marginTop: 2 }}>
-            Off = chipmunk / slow-mo voice, the classic speed-change sound.
-          </Mono>
-        </View>
-        <Pressable onPress={() => onPatch({ preservePitch: !clip.preservePitch })} style={[styles.pill, clip.preservePitch && styles.pillOn]}>
-          <Mono color={clip.preservePitch ? "#fff" : C.inkMute} size={10}>{clip.preservePitch ? "ON" : "OFF"}</Mono>
-        </Pressable>
-      </View>
-
-      <View style={[styles.rowBetween, { marginTop: 12 }]}>
-        <Mono color={C.inkSoft} size={11}>Mute original audio</Mono>
-        <Pressable onPress={() => onPatch({ muted: !clip.muted })} style={[styles.pill, clip.muted && styles.pillOn]}>
-          <Mono color={clip.muted ? "#fff" : C.inkMute} size={10}>{clip.muted ? "ON" : "OFF"}</Mono>
-        </Pressable>
-      </View>
     </View>
   );
 }
@@ -909,6 +1108,9 @@ const styles = StyleSheet.create({
   ctrl: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 7, gap: 10 },
   ctrlLabel: { color: C.inkMute, fontFamily: F.mono, fontSize: 10.5, flex: 1 },
   groupLabel: { color: C.inkMute, fontFamily: F.mono, fontSize: 10, letterSpacing: 1, textTransform: "uppercase", marginTop: 18, marginBottom: 4 },
+  groupLabelFlush: { color: C.inkMute, fontFamily: F.mono, fontSize: 10, letterSpacing: 1, textTransform: "uppercase" },
+  addClipBtn: { backgroundColor: C.red, borderRadius: 40, paddingHorizontal: 12, paddingVertical: 6 },
+  removeClipBtn: { marginTop: 18, borderWidth: 1, borderColor: C.lineStrong, borderRadius: 8, paddingVertical: 11, alignItems: "center", backgroundColor: C.surface },
   swatchRow: { flexDirection: "row", gap: 8, marginTop: 8 },
   swatch: { width: 28, height: 28, borderRadius: 14, borderWidth: 2, borderColor: "transparent" },
   swatchOn: { borderColor: "#fff" },

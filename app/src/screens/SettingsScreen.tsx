@@ -20,6 +20,8 @@ const CAPS: { name: string; level: string; tone: string }[] = [
   { name: "Unit converter (length/volume/weight/temp)", level: "Possible now", tone: C.go },
   { name: "Keyframe editor — layers, in/out, fades, easing", level: "Possible now", tone: C.go },
   { name: "Clip trim + speed 0.25x-4x (video)", level: "Possible now", tone: C.go },
+  { name: "Multi-clip sequence + dip-to-black transitions", level: "Possible now", tone: C.go },
+  { name: "Crossfade transition (two clips visible at once)", level: "Not built yet", tone: C.native },
   { name: "Speed-changed audio (pitch shift or time-stretch)", level: "Not built yet", tone: C.native },
   { name: "Screen recording (system-wide, MediaProjection)", level: "Possible now", tone: C.go },
   { name: "Frame-accurate video export (MediaCodec + GLES bake)", level: "Possible now", tone: C.go },

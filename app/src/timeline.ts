@@ -51,7 +51,16 @@ export type Layer = {
   chroma: Chroma | null;
 };
 
+/**
+ * How a clip enters from the one before it. "dip" darkens the tail of the
+ * outgoing clip and lifts the head of the incoming one through black, which
+ * needs only one decoder open at a time. A true crossfade (both clips visible
+ * at once) needs two simultaneous decoders and isn't built yet.
+ */
+export type Transition = "none" | "dip";
+
 export type BaseClip = {
+  id: string;
   uri: string;
   /** Source-time trim, in seconds. */
   trimIn: number;
@@ -61,6 +70,10 @@ export type BaseClip = {
   /** True = correct pitch back to normal after a speed change (chipmunk off). */
   preservePitch: boolean;
   muted: boolean;
+  /** Transition INTO this clip. Ignored on the first clip. */
+  transition: Transition;
+  /** Total seconds the transition spans, split across the cut. */
+  transitionDur: number;
 };
 
 export const DEFAULT_CHROMA: Chroma = { keyColor: [0.06, 0.72, 0.2], threshold: 0.35, smoothing: 0.15 };
@@ -78,6 +91,89 @@ export function clipOutputDuration(clip: BaseClip): number {
 /** Maps a timeline (output) time to the source-video time to sample. */
 export function outputTimeToSource(clip: BaseClip, t: number): number {
   return clip.trimIn + t * Math.max(0.01, clip.speed);
+}
+
+/** Timeline start time of each clip, in order. */
+export function clipStartTimes(clips: BaseClip[]): number[] {
+  const out: number[] = [];
+  let acc = 0;
+  for (const c of clips) {
+    out.push(acc);
+    acc += clipOutputDuration(c);
+  }
+  return out;
+}
+
+export function totalDuration(clips: BaseClip[]): number {
+  return clips.reduce((a, c) => a + clipOutputDuration(c), 0);
+}
+
+export type ClipHit = { clip: BaseClip; index: number; start: number; localT: number };
+
+/** Which clip is under the playhead, and how far into it we are. */
+export function clipAtTime(clips: BaseClip[], t: number): ClipHit | null {
+  if (clips.length === 0) return null;
+  const starts = clipStartTimes(clips);
+  for (let i = clips.length - 1; i >= 0; i--) {
+    if (t >= starts[i] - 1e-6) {
+      return { clip: clips[i], index: i, start: starts[i], localT: Math.max(0, t - starts[i]) };
+    }
+  }
+  return { clip: clips[0], index: 0, start: 0, localT: Math.max(0, t) };
+}
+
+/**
+ * How much to darken the composite at timeline time `t`, 0 (clear) to 1
+ * (black), from the dip transitions on either side of a cut. Half the
+ * transition rides on the outgoing clip and half on the incoming one, so the
+ * blackest point lands exactly on the cut.
+ *
+ * Mirrored by dipAmountAt() in the native exporter — keep the two in step.
+ */
+export function dipAmountAt(clips: BaseClip[], t: number): number {
+  const starts = clipStartTimes(clips);
+  let dip = 0;
+  for (let i = 1; i < clips.length; i++) {
+    const c = clips[i];
+    if (c.transition !== "dip" || c.transitionDur <= 0) continue;
+    const cut = starts[i];
+    const half = c.transitionDur / 2;
+    if (t >= cut - half && t <= cut + half) {
+      // 0 at the edges of the window, 1 at the cut itself.
+      dip = Math.max(dip, 1 - Math.abs(t - cut) / half);
+    }
+  }
+  return Math.max(0, Math.min(1, dip));
+}
+
+export function makeClip(uri: string, id: string): BaseClip {
+  return {
+    id,
+    uri,
+    trimIn: 0,
+    trimOut: 0,
+    speed: 1,
+    preservePitch: true,
+    muted: false,
+    transition: "none",
+    transitionDur: 0.6,
+  };
+}
+
+/** Serializes the clip sequence for the native exporter. Matches ClipParser.kt. */
+export function serializeClips(clips: BaseClip[]): string {
+  return JSON.stringify(
+    clips.map((c) => ({
+      uri: c.uri,
+      trimIn: c.trimIn,
+      trimOut: c.trimOut,
+      speed: c.speed,
+      preservePitch: c.preservePitch,
+      muted: c.muted,
+      transition: c.transition,
+      transitionDur: c.transitionDur,
+    }))
+  );
 }
 
 function ease(p: number, kind: Easing): number {

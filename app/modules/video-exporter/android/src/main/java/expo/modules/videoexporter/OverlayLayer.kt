@@ -40,14 +40,30 @@ data class ExportLayer(
   val smoothing: Float = 0.15f
 )
 
-/** Base-clip trim/speed/mute, mirroring BaseClip in src/timeline.ts. */
-data class ClipOptions(
+/** One clip in the timeline sequence, mirroring BaseClip in src/timeline.ts. */
+data class ExportClip(
+  val uri: String,
   val trimIn: Double,
   val trimOut: Double,
   val speed: Double,
   val preservePitch: Boolean,
-  val muted: Boolean
-)
+  val muted: Boolean,
+  val transition: String,
+  val transitionDur: Double
+) {
+  fun outputDurationUs(): Long {
+    val span = (trimOut - trimIn).coerceAtLeast(0.0)
+    return ((span / speed.coerceAtLeast(0.01)) * 1_000_000.0).toLong()
+  }
+
+  /**
+   * Audio is a straight sample copy, which is only correct at 1x. A speed
+   * change needs real resampling (pitch-shifted) or time-stretching
+   * (pitch-preserved); neither is built, so a retimed clip contributes
+   * silence rather than audio that drifts against the retimed video.
+   */
+  fun canPassThroughAudio(): Boolean = !muted && speed == 1.0
+}
 
 /** The preview's on-screen footprint for each layer kind — must match src/timeline.ts. */
 const val IMAGE_LAYER_BOX = 120f
@@ -104,15 +120,44 @@ object LayerParser {
     return out
   }
 
-  fun parseClipOptions(json: String): ClipOptions {
-    val o = org.json.JSONObject(json)
-    return ClipOptions(
-      trimIn = if (o.has("trimIn")) o.getDouble("trimIn") else 0.0,
-      trimOut = if (o.has("trimOut")) o.getDouble("trimOut") else 0.0,
-      speed = (if (o.has("speed")) o.getDouble("speed") else 1.0).coerceAtLeast(0.01),
-      preservePitch = if (o.has("preservePitch")) o.getBoolean("preservePitch") else true,
-      muted = if (o.has("muted")) o.getBoolean("muted") else false
-    )
+  fun parseClips(json: String): List<ExportClip> {
+    val arr = JSONArray(json)
+    val out = mutableListOf<ExportClip>()
+    for (i in 0 until arr.length()) {
+      val o = arr.getJSONObject(i)
+      out.add(
+        ExportClip(
+          uri = o.getString("uri").removePrefix("file://"),
+          trimIn = if (o.has("trimIn")) o.getDouble("trimIn") else 0.0,
+          trimOut = if (o.has("trimOut")) o.getDouble("trimOut") else 0.0,
+          speed = (if (o.has("speed")) o.getDouble("speed") else 1.0).coerceAtLeast(0.01),
+          preservePitch = if (o.has("preservePitch")) o.getBoolean("preservePitch") else true,
+          muted = if (o.has("muted")) o.getBoolean("muted") else false,
+          transition = if (o.has("transition") && !o.isNull("transition")) o.getString("transition") else "none",
+          transitionDur = if (o.has("transitionDur")) o.getDouble("transitionDur") else 0.0
+        )
+      )
+    }
+    return out
+  }
+
+  /**
+   * Mirrors dipAmountAt() in src/timeline.ts: how black the composite goes at
+   * timeline time `t`, from dip transitions on either side of each cut. Half
+   * the transition rides on each clip so the blackest point is the cut itself.
+   */
+  fun dipAmountAt(clips: List<ExportClip>, clipStartsUs: LongArray, t: Double): Float {
+    var dip = 0.0
+    for (i in 1 until clips.size) {
+      val c = clips[i]
+      if (c.transition != "dip" || c.transitionDur <= 0.0) continue
+      val cut = clipStartsUs[i] / 1_000_000.0
+      val half = c.transitionDur / 2.0
+      if (t >= cut - half && t <= cut + half) {
+        dip = maxOf(dip, 1.0 - Math.abs(t - cut) / half)
+      }
+    }
+    return dip.coerceIn(0.0, 1.0).toFloat()
   }
 
   /** Mirrors ease() in src/timeline.ts. */

@@ -1,6 +1,7 @@
 package expo.modules.videoexporter
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.SurfaceTexture
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
@@ -19,61 +20,54 @@ private const val TIMEOUT_US = 10_000L
 private const val FRAME_WAIT_TIMEOUT_MS = 2_500L
 
 /**
- * Frame-accurate keyframed-overlay video export: decode the source video with
- * MediaCodec into a SurfaceTexture (an external OES GL texture), composite it
- * plus every overlay layer's interpolated transform for that frame's exact
- * timestamp via GLES into a MediaCodec encoder's input surface, and mux the
- * result back to MP4 (copying the original audio track through unchanged).
+ * Bakes the Studio timeline into one MP4: a sequence of clips, each decoded
+ * with MediaCodec into a SurfaceTexture (external OES texture), composited
+ * with every overlay layer's interpolated pose for that frame via GLES, and
+ * encoded through a single MediaCodec encoder + muxer that stay open for the
+ * whole run so the output is one continuous stream.
  *
  * This is the standard MediaCodec decode -> GLES composite -> encode shape
- * (the same one Android's own CTS DecodeEditEncodeTest and the widely-used
- * "Grafika" reference samples use) — not a screen capture, and not a faked
- * export: every output frame is a real re-encode of the composited image.
+ * (as in Android's own CTS DecodeEditEncodeTest and the Grafika samples) —
+ * not a screen capture: every output frame is a real re-encode.
  */
 class VideoExportEngine(private val context: Context) {
 
   fun export(
-    videoPath: String,
     outputPath: String,
     layersJson: String,
     canvasWidth: Int,
     canvasHeight: Int,
-    clipJson: String
+    clipsJson: String
   ) {
     val layers = LayerParser.parse(layersJson)
-    val clip = LayerParser.parseClipOptions(clipJson)
-    val trimInUs = (clip.trimIn * 1_000_000L).toLong().coerceAtLeast(0L)
-    val trimOutUs = if (clip.trimOut > clip.trimIn) (clip.trimOut * 1_000_000L).toLong() else Long.MAX_VALUE
-    val speed = clip.speed.coerceAtLeast(0.01)
+    val clips = LayerParser.parseClips(clipsJson)
+    require(clips.isNotEmpty()) { "No clips to export" }
 
-    val videoExtractor = MediaExtractor().apply { setDataSource(videoPath) }
-    val videoTrackIndex = findTrack(videoExtractor, "video/")
-    require(videoTrackIndex >= 0) { "No video track in source" }
-    videoExtractor.selectTrack(videoTrackIndex)
-    val inputFormat = videoExtractor.getTrackFormat(videoTrackIndex)
-    val videoWidth = inputFormat.getInteger(MediaFormat.KEY_WIDTH)
-    val videoHeight = inputFormat.getInteger(MediaFormat.KEY_HEIGHT)
-    val videoMime = inputFormat.getString(MediaFormat.KEY_MIME)!!
+    // Output geometry comes from the first clip; later clips of a different
+    // size are fitted into it (letterboxed) rather than stretched.
+    val firstProbe = MediaExtractor().apply { setDataSource(clips[0].uri) }
+    val firstVideoTrack = findTrack(firstProbe, "video/")
+    require(firstVideoTrack >= 0) { "No video track in the first clip" }
+    val firstFormat = firstProbe.getTrackFormat(firstVideoTrack)
+    val outWidth = firstFormat.getInteger(MediaFormat.KEY_WIDTH)
+    val outHeight = firstFormat.getInteger(MediaFormat.KEY_HEIGHT)
+    firstProbe.release()
 
-    videoExtractor.seekTo(trimInUs, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
-
-    val audioExtractor = MediaExtractor().apply { setDataSource(videoPath) }
-    val audioTrackIndex = findTrack(audioExtractor, "audio/")
-    // Audio is passed through untouched, which is only correct at 1x. A speed
-    // change would need real resampling (pitch-shifted) or time-stretching
-    // (pitch-preserved) — neither is built yet, so rather than emit audio that
-    // drifts out of sync with the retimed video, a speed-changed export is
-    // silent and the UI says so up front.
-    val speedChangesAudio = speed != 1.0
-    val hasAudio = audioTrackIndex >= 0 && !clip.muted && !speedChangesAudio
-    if (hasAudio) {
-      audioExtractor.selectTrack(audioTrackIndex)
-      audioExtractor.seekTo(trimInUs, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
+    // The muxer's audio track has to be declared before the muxer starts, so
+    // the format is taken from the first clip that can actually contribute
+    // audio. Clips whose format doesn't match it contribute silence.
+    var audioFormatForMuxer: MediaFormat? = null
+    for (clip in clips) {
+      if (!clip.canPassThroughAudio()) continue
+      val probe = MediaExtractor().apply { setDataSource(clip.uri) }
+      val at = findTrack(probe, "audio/")
+      if (at >= 0) audioFormatForMuxer = probe.getTrackFormat(at)
+      probe.release()
+      if (audioFormatForMuxer != null) break
     }
-    val audioFormat = if (hasAudio) audioExtractor.getTrackFormat(audioTrackIndex) else null
 
-    val bitRate = (videoWidth * videoHeight * 4).coerceAtLeast(4_000_000)
-    val outputFormat = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, videoWidth, videoHeight).apply {
+    val bitRate = (outWidth * outHeight * 4).coerceAtLeast(4_000_000)
+    val outputFormat = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, outWidth, outHeight).apply {
       setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
       setInteger(MediaFormat.KEY_BIT_RATE, bitRate)
       setInteger(MediaFormat.KEY_FRAME_RATE, 30)
@@ -95,19 +89,23 @@ class VideoExportEngine(private val context: Context) {
     val stillChromaProgram = ChromaKeyProgram(isExternal = false)
     val oesTextureId = videoProgram.createTexture()
 
+    // A 1x1 black texture, stretched over the frame to dip transitions through
+    // black. Cheaper and simpler than a dedicated solid-colour shader.
+    val blackTexId = overlayProgram.createTexture()
+    val blackBmp = Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888).apply { setPixel(0, 0, android.graphics.Color.BLACK) }
+    GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, blackTexId)
+    GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, blackBmp, 0)
+    blackBmp.recycle()
+
     val glThread = HandlerThread("LensiiVideoExportGL").apply { start() }
     val glHandler = Handler(glThread.looper)
     val frameWaiter = FrameWaiter()
     val surfaceTexture = SurfaceTexture(oesTextureId)
-    surfaceTexture.setDefaultBufferSize(videoWidth, videoHeight)
+    surfaceTexture.setDefaultBufferSize(outWidth, outHeight)
     surfaceTexture.setOnFrameAvailableListener(frameWaiter, glHandler)
     val decoderSurface = Surface(surfaceTexture)
 
-    val decoder = MediaCodec.createDecoderByType(videoMime)
-    decoder.configure(inputFormat, decoderSurface, null, 0)
-    decoder.start()
-
-    // Upload every image/text overlay layer's bitmap once, up front.
+    // Still layers' bitmaps are uploaded once and reused across every clip.
     data class Overlay(val layer: ExportLayer, val texId: Int, val naturalW: Float, val naturalH: Float, val layoutW: Float, val layoutH: Float)
     val overlays = layers.filter { it.kind != "video" }.map { layer ->
       val bmp = LayerBitmapFactory.build(context, layer)
@@ -120,9 +118,7 @@ class VideoExportEngine(private val context: Context) {
       Overlay(layer, texId, natW, natH, layoutW, layoutH)
     }
 
-    // Each "video" layer (a green/blue-screen clip) gets its own independent
-    // decode pipeline, driven forward per base-video frame — see
-    // OverlayVideoDecoder for why this is kept as its own small unit.
+    // Each video overlay layer gets its own independent decode pipeline.
     data class VideoOverlay(val layer: ExportLayer, val decoder: OverlayVideoDecoder, val naturalW: Float, val naturalH: Float)
     val videoOverlays = layers.filter { it.kind == "video" && it.uri != null }.mapNotNull { layer ->
       try {
@@ -131,18 +127,16 @@ class VideoExportEngine(private val context: Context) {
         val (natW, natH) = videoLayerNaturalSize()
         VideoOverlay(layer, dec, natW, natH)
       } catch (e: Exception) {
-        null // A broken green-screen clip shouldn't fail the whole export.
+        null // A broken overlay clip shouldn't fail the whole export.
       }
     }
 
-    // Maps the Editor's contentFit="contain" preview canvas onto the video's native pixels.
-    val containScale = (minOf(canvasWidth.toFloat() / videoWidth, canvasHeight.toFloat() / videoHeight))
+    // Maps the preview canvas (contentFit="contain") onto output pixels.
+    val containScale = (minOf(canvasWidth.toFloat() / outWidth, canvasHeight.toFloat() / outHeight))
       .let { if (it.isNaN() || it <= 0f) 1f else it }
-    val offsetX = (canvasWidth - videoWidth * containScale) / 2f
-    val offsetY = (canvasHeight - videoHeight * containScale) / 2f
+    val offsetX = (canvasWidth - outWidth * containScale) / 2f
+    val offsetY = (canvasHeight - outHeight * containScale) / 2f
 
-    // Shared by every overlay kind: maps a keyframe transform (in Editor preview
-    // canvas-space) to the NDC model matrix for drawing into the video frame.
     fun modelMatrixFor(t: ExportKeyframe, layoutW: Float, layoutH: Float, naturalW: Float, naturalH: Float): FloatArray {
       val anchorCanvasX = t.x.toFloat() + layoutW / 2f
       val anchorCanvasY = t.y.toFloat() + layoutH / 2f
@@ -151,15 +145,15 @@ class VideoExportEngine(private val context: Context) {
       val quadW = (naturalW / containScale) * t.scale.toFloat()
       val quadH = (naturalH / containScale) * t.scale.toFloat()
 
-      val ndcX = (anchorVideoX / videoWidth) * 2f - 1f
-      val ndcY = 1f - (anchorVideoY / videoHeight) * 2f
-      val ndcW = (quadW / videoWidth) * 2f
-      val ndcH = (quadH / videoHeight) * 2f
+      val ndcX = (anchorVideoX / outWidth) * 2f - 1f
+      val ndcY = 1f - (anchorVideoY / outHeight) * 2f
+      val ndcW = (quadW / outWidth) * 2f
+      val ndcH = (quadH / outHeight) * 2f
 
       val model = FloatArray(16)
       Matrix.setIdentityM(model, 0)
       Matrix.translateM(model, 0, ndcX, ndcY, 0f)
-      // Preview rotation is defined in a y-down coordinate space; NDC is y-up, so negate to match.
+      // Preview rotation is y-down; NDC is y-up, so negate to match.
       Matrix.rotateM(model, 0, -t.rotation.toFloat(), 0f, 0f, 1f)
       Matrix.scaleM(model, 0, ndcW / 2f, ndcH / 2f, 1f)
       return model
@@ -171,41 +165,108 @@ class VideoExportEngine(private val context: Context) {
     var muxerStarted = false
 
     val bufferInfo = MediaCodec.BufferInfo()
-    var inputDone = false
-    var decoderDone = false
-    var encoderDone = false
-    val texMatrix = FloatArray(16)
     val identity = FloatArray(16).also { Matrix.setIdentityM(it, 0) }
+    val texMatrix = FloatArray(16)
+
+    /** Pulls whatever the encoder has ready into the muxer. */
+    fun drainEncoder(endOfStream: Boolean) {
+      while (true) {
+        val idx = encoder.dequeueOutputBuffer(bufferInfo, TIMEOUT_US)
+        if (idx == MediaCodec.INFO_TRY_AGAIN_LATER) {
+          if (!endOfStream) return
+          continue
+        }
+        if (idx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+          if (!muxerStarted) {
+            muxerVideoTrack = muxer.addTrack(encoder.outputFormat)
+            audioFormatForMuxer?.let { muxerAudioTrack = muxer.addTrack(it) }
+            muxer.start()
+            muxerStarted = true
+          }
+          continue
+        }
+        if (idx >= 0) {
+          if ((bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0) bufferInfo.size = 0
+          if (bufferInfo.size > 0 && muxerStarted) {
+            val data = encoder.getOutputBuffer(idx)!!
+            data.position(bufferInfo.offset)
+            data.limit(bufferInfo.offset + bufferInfo.size)
+            muxer.writeSampleData(muxerVideoTrack, data, bufferInfo)
+          }
+          encoder.releaseOutputBuffer(idx, false)
+          if ((bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) return
+        }
+      }
+    }
+
+    val clipStartsUs = LongArray(clips.size)
+    run {
+      var acc = 0L
+      for (i in clips.indices) {
+        clipStartsUs[i] = acc
+        acc += clips[i].outputDurationUs()
+      }
+    }
 
     try {
-      while (!encoderDone) {
-        if (!inputDone) {
-          val inIndex = decoder.dequeueInputBuffer(TIMEOUT_US)
-          if (inIndex >= 0) {
-            val buf = decoder.getInputBuffer(inIndex)!!
-            val sampleSize = videoExtractor.readSampleData(buf, 0)
-            // Stop feeding once past the trim range — the decoder still needs
-            // to drain what's already queued, so EOS is signalled here rather
-            // than breaking out of the loop.
-            if (sampleSize < 0 || videoExtractor.sampleTime > trimOutUs) {
-              decoder.queueInputBuffer(inIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
-              inputDone = true
-            } else {
-              decoder.queueInputBuffer(inIndex, 0, sampleSize, videoExtractor.sampleTime, 0)
-              videoExtractor.advance()
-            }
-          }
+      for ((clipIndex, clip) in clips.withIndex()) {
+        val trimInUs = (clip.trimIn * 1_000_000.0).toLong().coerceAtLeast(0L)
+        val speed = clip.speed.coerceAtLeast(0.01)
+        val clipStartUs = clipStartsUs[clipIndex]
+
+        val extractor = MediaExtractor().apply { setDataSource(clip.uri) }
+        val vTrack = findTrack(extractor, "video/")
+        if (vTrack < 0) {
+          extractor.release()
+          continue // A clip with no video track is skipped rather than fatal.
+        }
+        extractor.selectTrack(vTrack)
+        val inFormat = extractor.getTrackFormat(vTrack)
+        val clipW = inFormat.getInteger(MediaFormat.KEY_WIDTH)
+        val clipH = inFormat.getInteger(MediaFormat.KEY_HEIGHT)
+        val mime = inFormat.getString(MediaFormat.KEY_MIME)!!
+        val trimOutUs = if (clip.trimOut > clip.trimIn) (clip.trimOut * 1_000_000.0).toLong() else Long.MAX_VALUE
+        extractor.seekTo(trimInUs, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
+
+        // Fit this clip into the output frame preserving its aspect ratio, so
+        // a mixed-resolution timeline letterboxes instead of stretching.
+        val fit = minOf(outWidth.toFloat() / clipW, outHeight.toFloat() / clipH)
+        val baseModel = FloatArray(16).also {
+          Matrix.setIdentityM(it, 0)
+          Matrix.scaleM(it, 0, (clipW * fit) / outWidth, (clipH * fit) / outHeight, 1f)
         }
 
-        if (!decoderDone) {
+        val decoder = MediaCodec.createDecoderByType(mime)
+        decoder.configure(inFormat, decoderSurface, null, 0)
+        decoder.start()
+
+        var inputDone = false
+        var thisClipDone = false
+
+        while (!thisClipDone) {
+          if (!inputDone) {
+            val inIndex = decoder.dequeueInputBuffer(TIMEOUT_US)
+            if (inIndex >= 0) {
+              val buf = decoder.getInputBuffer(inIndex)!!
+              val sampleSize = extractor.readSampleData(buf, 0)
+              if (sampleSize < 0 || extractor.sampleTime > trimOutUs) {
+                decoder.queueInputBuffer(inIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                inputDone = true
+              } else {
+                decoder.queueInputBuffer(inIndex, 0, sampleSize, extractor.sampleTime, 0)
+                extractor.advance()
+              }
+            }
+          }
+
           val outIndex = decoder.dequeueOutputBuffer(bufferInfo, TIMEOUT_US)
           if (outIndex >= 0) {
             val isEos = (bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0
             val framePtsUs = bufferInfo.presentationTimeUs
-            // Seeking to trimIn lands on the preceding sync frame, so frames
-            // before the trim point still decode — they just must not be drawn.
-            val inTrimRange = framePtsUs >= trimInUs && framePtsUs <= trimOutUs
-            val doRender = bufferInfo.size > 0 && inTrimRange
+            // Seeking lands on the sync frame before trimIn, so earlier frames
+            // still decode — they just must not be drawn.
+            val inRange = framePtsUs >= trimInUs && framePtsUs <= trimOutUs
+            val doRender = bufferInfo.size > 0 && inRange
             decoder.releaseOutputBuffer(outIndex, doRender)
 
             if (doRender) {
@@ -214,19 +275,20 @@ class VideoExportEngine(private val context: Context) {
               surfaceTexture.getTransformMatrix(texMatrix)
 
               windowSurface.makeCurrent()
-              GLES20.glViewport(0, 0, videoWidth, videoHeight)
+              GLES20.glViewport(0, 0, outWidth, outHeight)
               GLES20.glClearColor(0f, 0f, 0f, 1f)
               GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
 
               GLES20.glDisable(GLES20.GL_BLEND)
-              videoProgram.draw(identity, texMatrix, oesTextureId, 1f)
+              videoProgram.draw(baseModel, texMatrix, oesTextureId, 1f)
 
               GLES20.glEnable(GLES20.GL_BLEND)
               GLES20.glBlendFunc(GLES20.GL_SRC_ALPHA, GLES20.GL_ONE_MINUS_SRC_ALPHA)
-              // Layers are keyed against timeline (output) time, so trim and
-              // speed have to be undone here — the same conversion the preview
-              // does in StudioScreen.
-              val timelineSec = (framePtsUs - trimInUs) / 1_000_000.0 / speed
+
+              // Timeline (output) time: where this frame lands in the finished
+              // video, which is what every layer is keyed against.
+              val outPtsUs = clipStartUs + ((framePtsUs - trimInUs) / speed).toLong().coerceAtLeast(0L)
+              val timelineSec = outPtsUs / 1_000_000.0
 
               for (ov in overlays) {
                 val alpha = LayerParser.alphaAt(ov.layer, timelineSec)
@@ -244,9 +306,7 @@ class VideoExportEngine(private val context: Context) {
               for (vo in videoOverlays) {
                 val alpha = LayerParser.alphaAt(vo.layer, timelineSec)
                 if (alpha <= 0f) continue
-                // Overlay clips play from their own start when the layer comes
-                // in, so they're driven by time-since-tIn rather than the base
-                // video's timestamp.
+                // Overlay clips play from their own start when the layer comes in.
                 val overlayPtsUs = ((timelineSec - vo.layer.tIn) * 1_000_000.0).toLong().coerceAtLeast(0L)
                 if (!vo.decoder.advanceTo(overlayPtsUs)) continue
                 val t = LayerParser.transformAt(vo.layer, timelineSec)
@@ -261,71 +321,67 @@ class VideoExportEngine(private val context: Context) {
                 }
               }
 
-              // Speed is applied by restamping output frames; the encoder is
-              // otherwise unaware the timeline was retimed.
-              val outPtsUs = ((framePtsUs - trimInUs) / speed).toLong().coerceAtLeast(0L)
+              // Dip-through-black transitions sit on top of everything.
+              val dip = LayerParser.dipAmountAt(clips, clipStartsUs, timelineSec)
+              if (dip > 0f) {
+                overlayProgram.draw(identity, identity, blackTexId, dip)
+              }
+
               windowSurface.setPresentationTime(outPtsUs * 1000)
               windowSurface.swapBuffers()
+              drainEncoder(false)
             }
 
-            if (isEos) {
-              decoderDone = true
-              encoder.signalEndOfInputStream()
-            }
+            if (isEos) thisClipDone = true
           }
         }
 
-        val encOutIndex = encoder.dequeueOutputBuffer(bufferInfo, TIMEOUT_US)
-        when {
-          encOutIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
-            muxerVideoTrack = muxer.addTrack(encoder.outputFormat)
-            if (hasAudio && audioFormat != null) muxerAudioTrack = muxer.addTrack(audioFormat)
-            muxer.start()
-            muxerStarted = true
-          }
-          encOutIndex >= 0 -> {
-            val encodedData = encoder.getOutputBuffer(encOutIndex)!!
-            if ((bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0) {
-              bufferInfo.size = 0
-            }
-            if (bufferInfo.size > 0 && muxerStarted) {
-              encodedData.position(bufferInfo.offset)
-              encodedData.limit(bufferInfo.offset + bufferInfo.size)
-              muxer.writeSampleData(muxerVideoTrack, encodedData, bufferInfo)
-            }
-            encoder.releaseOutputBuffer(encOutIndex, false)
-            if ((bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
-              encoderDone = true
-            }
-          }
-        }
+        try { decoder.stop() } catch (e: Exception) { }
+        decoder.release()
+        extractor.release()
       }
 
-      // Audio is copied through untouched (1x only — see hasAudio above),
-      // shifted so the trim point becomes t=0. Written after video because
-      // MediaMuxer does not require cross-track samples to be interleaved.
-      if (hasAudio && muxerAudioTrack >= 0) {
+      // One EOS for the whole sequence, after every clip has been drawn.
+      encoder.signalEndOfInputStream()
+      drainEncoder(true)
+
+      // Audio is copied through per clip and offset onto the timeline. Only
+      // 1x, unmuted clips whose format matches the muxer track contribute;
+      // anything else leaves a silent gap rather than a desynced one.
+      if (muxerAudioTrack >= 0 && audioFormatForMuxer != null) {
         val audioBufferInfo = MediaCodec.BufferInfo()
         val audioBuf = ByteBuffer.allocate(1 shl 20)
-        while (true) {
-          audioBuf.clear()
-          val size = audioExtractor.readSampleData(audioBuf, 0)
-          if (size < 0) break
-          val ptsUs = audioExtractor.sampleTime
-          if (ptsUs > trimOutUs) break
-          if (ptsUs >= trimInUs) {
-            audioBufferInfo.set(0, size, ptsUs - trimInUs, audioExtractor.sampleFlags)
-            muxer.writeSampleData(muxerAudioTrack, audioBuf, audioBufferInfo)
+        for ((clipIndex, clip) in clips.withIndex()) {
+          if (!clip.canPassThroughAudio()) continue
+          val aEx = MediaExtractor().apply { setDataSource(clip.uri) }
+          val aTrack = findTrack(aEx, "audio/")
+          if (aTrack < 0 || !audioFormatMatches(aEx.getTrackFormat(aTrack), audioFormatForMuxer)) {
+            aEx.release()
+            continue
           }
-          audioExtractor.advance()
+          aEx.selectTrack(aTrack)
+          val trimInUs = (clip.trimIn * 1_000_000.0).toLong().coerceAtLeast(0L)
+          val trimOutUs = if (clip.trimOut > clip.trimIn) (clip.trimOut * 1_000_000.0).toLong() else Long.MAX_VALUE
+          aEx.seekTo(trimInUs, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
+          while (true) {
+            audioBuf.clear()
+            val size = aEx.readSampleData(audioBuf, 0)
+            if (size < 0) break
+            val ptsUs = aEx.sampleTime
+            if (ptsUs > trimOutUs) break
+            if (ptsUs >= trimInUs) {
+              audioBufferInfo.set(0, size, clipStartsUs[clipIndex] + (ptsUs - trimInUs), aEx.sampleFlags)
+              muxer.writeSampleData(muxerAudioTrack, audioBuf, audioBufferInfo)
+            }
+            aEx.advance()
+          }
+          aEx.release()
         }
       }
     } finally {
       for (vo in videoOverlays) {
         try { vo.decoder.release() } catch (e: Exception) { }
       }
-      try { decoder.stop() } catch (e: Exception) { }
-      decoder.release()
       try { encoder.stop() } catch (e: Exception) { }
       encoder.release()
       windowSurface.release()
@@ -333,13 +389,20 @@ class VideoExportEngine(private val context: Context) {
       surfaceTexture.release()
       decoderSurface.release()
       glThread.quitSafely()
-      videoExtractor.release()
-      audioExtractor.release()
       if (muxerStarted) {
         try { muxer.stop() } catch (e: Exception) { }
       }
       muxer.release()
     }
+  }
+
+  /** Same mime/sample-rate/channel-count means samples can share one muxer track. */
+  private fun audioFormatMatches(a: MediaFormat, b: MediaFormat): Boolean = try {
+    a.getString(MediaFormat.KEY_MIME) == b.getString(MediaFormat.KEY_MIME) &&
+      a.getInteger(MediaFormat.KEY_SAMPLE_RATE) == b.getInteger(MediaFormat.KEY_SAMPLE_RATE) &&
+      a.getInteger(MediaFormat.KEY_CHANNEL_COUNT) == b.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+  } catch (e: Exception) {
+    false
   }
 
   private fun findTrack(extractor: MediaExtractor, mimePrefix: String): Int {
@@ -350,4 +413,3 @@ class VideoExportEngine(private val context: Context) {
     return -1
   }
 }
-

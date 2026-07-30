@@ -1,23 +1,13 @@
 import { requireNativeModule } from "expo-modules-core";
 
-/** Mirrors BaseClip's exportable fields in src/timeline.ts. */
-export type ExportClipOptions = {
-  trimIn: number;
-  trimOut: number;
-  speed: number;
-  preservePitch: boolean;
-  muted: boolean;
-};
-
 type NativeVideoExporterModule = {
   isAvailable(): boolean;
   exportVideo(
-    videoPath: string,
     outputPath: string,
     layersJson: string,
     canvasWidth: number,
     canvasHeight: number,
-    clipJson: string
+    clipsJson: string
   ): Promise<string>;
   exportImageSequence(urisJson: string, fps: number, outputPath: string): Promise<string>;
 };
@@ -48,31 +38,24 @@ export function isVideoExportAvailable(): boolean {
  * capture. Every layer is drawn at its interpolated keyframe pose for that
  * frame's exact timestamp, respecting its in/out window and fades.
  *
- * `layersJson` must come from serializeLayers() in src/timeline.ts so the field
- * names line up with LayerParser.kt. `canvasWidth`/`canvasHeight` are the
+ * `layersJson` and `clipsJson` must come from serializeLayers()/serializeClips()
+ * in src/timeline.ts so the field names line up with LayerParser.kt. Clips play
+ * back to back, each with its own trim/speed and optional dip transition. `canvasWidth`/`canvasHeight` are the
  * on-screen preview size the keyframes were authored against, so the native
  * side can map preview-space coordinates onto the video's pixel space.
  *
  * `outputPath` must be a plain filesystem path (no `file://` prefix).
  */
-export async function exportOverlaidVideo(
-  videoUri: string,
+export async function exportTimeline(
   outputPath: string,
   layersJson: string,
+  clipsJson: string,
   canvasWidth: number,
-  canvasHeight: number,
-  clip: ExportClipOptions
+  canvasHeight: number
 ): Promise<string> {
   const mod = getNative();
   if (!mod) throw new Error("Video export is not available on this build");
-  return mod.exportVideo(
-    videoUri,
-    outputPath,
-    layersJson,
-    Math.round(canvasWidth),
-    Math.round(canvasHeight),
-    JSON.stringify(clip)
-  );
+  return mod.exportVideo(outputPath, layersJson, Math.round(canvasWidth), Math.round(canvasHeight), clipsJson);
 }
 
 /**
