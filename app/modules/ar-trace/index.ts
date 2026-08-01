@@ -86,6 +86,14 @@ export type ArTraceViewProps = {
   /** file:// URI (or content URI) of the reference image to trace/project. Null clears it. */
   imageUri?: string | null;
   overlayOpacity?: number;
+  /**
+   * Draw extracted edges instead of the photo. A full-tone image hides your own
+   * pencil line underneath it; lines don't. Done in the fragment shader, so
+   * toggling it and tuning the threshold are both instant.
+   */
+  lineMode?: boolean;
+  /** Sobel magnitude at which a pixel starts counting as an edge (0.02–1). Lower = more lines. */
+  lineThreshold?: number;
   /** Real-world width of the projected image, in metres. With a marker lock this is literal. */
   overlayWidthMeters?: number;
   /**

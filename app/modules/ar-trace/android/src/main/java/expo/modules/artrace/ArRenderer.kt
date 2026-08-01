@@ -28,6 +28,15 @@ import javax.microedition.khronos.opengles.GL10
 
 private const val FLOAT_SIZE = 4
 
+/**
+ * Reference width the edge filter samples at. A one-texel Sobel measures the
+ * gradient across a single pixel, which on a 4000px phone photo is almost flat
+ * — line mode would come out blank. Sampling a fixed fraction of the image
+ * instead (never finer than one real texel, for small images) makes the
+ * threshold mean the same thing whatever resolution gets imported.
+ */
+private const val EDGE_REF = 900f
+
 /** Lock quality, best-first. Reported to JS so the HUD can be honest about it. */
 const val LOCK_NONE = "NONE"
 const val LOCK_SURFACE = "SURFACE"
@@ -71,14 +80,46 @@ private const val OV_VERTEX_SHADER = """
   }
 """
 
+/**
+ * Photo mode passes the image through. Line mode runs a Sobel edge detect and
+ * draws only the edges — which is what you actually want to trace, since a
+ * full-tone photo hides your own pencil line under it. Doing it in the shader
+ * means it's live and free: no pre-processing pass, no second bitmap, and the
+ * sensitivity slider re-renders instantly.
+ */
 private const val OV_FRAGMENT_SHADER = """
   precision mediump float;
   varying vec2 vTexCoord;
   uniform sampler2D sTexture;
   uniform float uAlpha;
+  uniform float uEdges;
+  uniform float uEdgeLow;
+  uniform vec2 uTexel;
+
+  float lum(vec2 uv) {
+    vec3 c = texture2D(sTexture, uv).rgb;
+    return dot(c, vec3(0.299, 0.587, 0.114));
+  }
+
   void main() {
     vec4 c = texture2D(sTexture, vTexCoord);
-    gl_FragColor = vec4(c.rgb, c.a * uAlpha);
+    if (uEdges < 0.5) {
+      gl_FragColor = vec4(c.rgb, c.a * uAlpha);
+      return;
+    }
+    float tl = lum(vTexCoord + vec2(-uTexel.x, -uTexel.y));
+    float tc = lum(vTexCoord + vec2(0.0, -uTexel.y));
+    float tr = lum(vTexCoord + vec2(uTexel.x, -uTexel.y));
+    float ml = lum(vTexCoord + vec2(-uTexel.x, 0.0));
+    float mr = lum(vTexCoord + vec2(uTexel.x, 0.0));
+    float bl = lum(vTexCoord + vec2(-uTexel.x, uTexel.y));
+    float bc = lum(vTexCoord + vec2(0.0, uTexel.y));
+    float br = lum(vTexCoord + vec2(uTexel.x, uTexel.y));
+    float gx = -tl - 2.0 * ml - bl + tr + 2.0 * mr + br;
+    float gy = -tl - 2.0 * tc - tr + bl + 2.0 * bc + br;
+    float g = sqrt(gx * gx + gy * gy);
+    float e = smoothstep(uEdgeLow, uEdgeLow + 0.25, g);
+    gl_FragColor = vec4(0.0, 0.0, 0.0, e * c.a * uAlpha);
   }
 """
 
@@ -153,7 +194,12 @@ class ArRenderer(
   private var ovMvpUniform = 0
   private var ovAlphaUniform = 0
   private var ovTextureUniform = 0
+  private var ovEdgesUniform = 0
+  private var ovEdgeLowUniform = 0
+  private var ovTexelUniform = 0
   private var overlayTextureId = 0
+  private var overlayTexW = 1
+  private var overlayTexH = 1
 
   private val quadPositionBuffer = toFloatBuffer(NDC_QUAD_COORDS)
   private val cameraTexCoords = FloatArray(8).also { OVERLAY_TEX_COORDS.copyInto(it) }
@@ -220,6 +266,9 @@ class ArRenderer(
     ovMvpUniform = GLES20.glGetUniformLocation(overlayProgram, "uMVPMatrix")
     ovAlphaUniform = GLES20.glGetUniformLocation(overlayProgram, "uAlpha")
     ovTextureUniform = GLES20.glGetUniformLocation(overlayProgram, "sTexture")
+    ovEdgesUniform = GLES20.glGetUniformLocation(overlayProgram, "uEdges")
+    ovEdgeLowUniform = GLES20.glGetUniformLocation(overlayProgram, "uEdgeLow")
+    ovTexelUniform = GLES20.glGetUniformLocation(overlayProgram, "uTexel")
     overlayTextureId = 0
 
     // EGL context may have been recreated — re-upload the last-known overlay image if any.
@@ -391,6 +440,8 @@ class ArRenderer(
     GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
     GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, bmp, 0)
 
+    overlayTexW = bmp.width.coerceAtLeast(1)
+    overlayTexH = bmp.height.coerceAtLeast(1)
     overlayAspect = if (bmp.height > 0) bmp.width.toFloat() / bmp.height.toFloat() else 1f
     builtForWidth = -1f
     lastBitmap = bmp
@@ -483,6 +534,13 @@ class ArRenderer(
     GLES20.glUniform1i(ovTextureUniform, 0)
     GLES20.glUniformMatrix4fv(ovMvpUniform, 1, false, mvpMatrix, 0)
     GLES20.glUniform1f(ovAlphaUniform, view.overlayOpacity.coerceIn(0f, 1f))
+    GLES20.glUniform1f(ovEdgesUniform, if (view.lineMode) 1f else 0f)
+    GLES20.glUniform1f(ovEdgeLowUniform, view.lineThreshold.coerceIn(0.02f, 1f))
+    GLES20.glUniform2f(
+      ovTexelUniform,
+      (1f / overlayTexW).coerceAtLeast(1f / EDGE_REF),
+      (1f / overlayTexH).coerceAtLeast(1f / EDGE_REF)
+    )
 
     overlayPositionBuffer.position(0)
     GLES20.glEnableVertexAttribArray(ovPositionAttrib)

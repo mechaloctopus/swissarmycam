@@ -50,6 +50,9 @@ class ArTraceView(context: Context, appContext: AppContext) : ExpoView(context, 
   private var paused = false
 
   @Volatile var overlayOpacity: Float = 0.85f
+  /** Draw extracted edges instead of the photo — what you actually trace. */
+  @Volatile var lineMode: Boolean = false
+  @Volatile var lineThreshold: Float = 0.18f
   @Volatile var overlayWidthMeters: Float = 0.21f
   @Volatile var overlayRotation: Float = 0f
   @Volatile var overlayOffsetX: Float = 0f

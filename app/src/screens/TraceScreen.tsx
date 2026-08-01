@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { View, Text, StyleSheet, Pressable, PanResponder, LayoutChangeEvent, ActivityIndicator } from "react-native";
 import { C, F } from "../theme";
 import { Label, Mono } from "../components/ui";
-import { Slider, Toggle, Row, Stepper } from "../components/controls";
+import { Slider, Toggle, Row, Stepper, Segmented } from "../components/controls";
 import { pickImageFromLibrary, shareFile } from "../media";
 import {
   ArTraceView, isArTraceAvailable, checkArAvailability, requestArInstall, exportTraceMarker,
@@ -39,6 +39,8 @@ export default function TraceScreen({ focused }: { focused: boolean }) {
 
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [opacity, setOpacity] = useState(85);
+  const [mode, setMode] = useState<"photo" | "lines">("lines");
+  const [detail, setDetail] = useState(18);
   const [widthMm, setWidthMm] = useState(210); // A4 width — a sane default to trace at
   const [markerMm, setMarkerMm] = useState(100);
   // Applying this rebuilds ARCore's image database, so let the stepper settle
@@ -203,6 +205,8 @@ export default function TraceScreen({ focused }: { focused: boolean }) {
             style={StyleSheet.absoluteFill}
             imageUri={imageUri}
             overlayOpacity={opacity / 100}
+            lineMode={mode === "lines"}
+            lineThreshold={detail / 100}
             overlayWidthMeters={widthMm / 1000}
             markerWidthMeters={appliedMarkerMm / 1000}
             overlayRotation={rotation}
@@ -264,6 +268,19 @@ export default function TraceScreen({ focused }: { focused: boolean }) {
           <Toggle value={locked} onChange={setLocked} />
         </View>
 
+        <Row title="Show" hint="Lines extracts the edges — a full-tone photo hides your own pencil line under it.">
+          <Segmented
+            options={["lines", "photo"] as const}
+            value={mode}
+            onChange={setMode}
+            format={(v) => (v === "lines" ? "Lines" : "Photo")}
+          />
+        </Row>
+        {mode === "lines" && (
+          <Row title="Line detail" hint="Lower picks up softer edges; higher keeps only the strong ones.">
+            <Slider value={detail} min={4} max={60} step={2} onChange={setDetail} width={150} />
+          </Row>
+        )}
         <Row title="Opacity">
           <Slider value={opacity} min={10} max={100} step={5} onChange={setOpacity} width={150} />
         </Row>

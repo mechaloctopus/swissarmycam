@@ -58,6 +58,8 @@ class ArTraceModule : Module() {
 
       Prop("imageUri") { view: ArTraceView, uri: String? -> view.setOverlayImage(uri) }
       Prop("overlayOpacity") { view: ArTraceView, v: Float -> view.overlayOpacity = v }
+      Prop("lineMode") { view: ArTraceView, v: Boolean -> view.lineMode = v }
+      Prop("lineThreshold") { view: ArTraceView, v: Float -> view.lineThreshold = v }
       Prop("overlayWidthMeters") { view: ArTraceView, v: Float -> view.overlayWidthMeters = v }
       Prop("markerWidthMeters") { view: ArTraceView, v: Float -> view.setMarkerWidthMeters(v) }
       Prop("overlayRotation") { view: ArTraceView, v: Float -> view.overlayRotation = v }
