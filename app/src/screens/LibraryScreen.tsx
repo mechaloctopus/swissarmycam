@@ -7,8 +7,9 @@ import { C, F } from "../theme";
 import { Label, Mono } from "../components/ui";
 import { PalettePanel, TextResult, SceneResult } from "../components/PalettePanel";
 import { extractPalette, extractText, labelScene, Swatch, TextScan, SceneLabel } from "../analyze";
-import { listMedia, deleteMedia, saveCapture, listTimelapseSessions, deleteTimelapseSession, MediaItem, TLSession } from "../store";
+import { listMedia, deleteMedia, saveCapture, listTimelapseSessions, deleteTimelapseSession, newVideoOutputPath, saveVideo, MediaItem, TLSession } from "../store";
 import { saveToPhotos, shareFile } from "../media";
+import { isVideoExportAvailable, exportImageSequence } from "video-exporter";
 
 const COLS = 3;
 const GAP = 3;
@@ -124,7 +125,15 @@ export default function LibraryScreen({ focused }: { focused: boolean }) {
         <View style={styles.viewer}>
           {viewer?.type === "photo" && <Image source={{ uri: viewer.uri }} style={StyleSheet.absoluteFill} contentFit="contain" />}
           {viewer?.type === "video" && <VideoViewer uri={viewer.uri} />}
-          {viewer?.type === "tl" && <TLPlayer frames={viewer.session.frames} />}
+          {viewer?.type === "tl" && (
+            <TLPlayer
+              frames={viewer.session.frames}
+              onBaked={() => {
+                flash("Timelapse baked to MP4 — it's in your videos");
+                load();
+              }}
+            />
+          )}
 
           {viewer?.type === "photo" && (analyzing || analysis.length > 0 || reading || ocr || identifying || scene.length > 0) && (
             <ScrollView style={styles.analysisWrap} nestedScrollEnabled>
@@ -328,12 +337,33 @@ function VideoViewer({ uri }: { uri: string }) {
   return <VideoView player={player} style={StyleSheet.absoluteFill} contentFit="contain" nativeControls />;
 }
 
-/** Plays a timelapse frame-set as a looping preview. */
-function TLPlayer({ frames }: { frames: string[] }) {
+/** Plays a timelapse frame-set as a looping preview, and bakes it to MP4. */
+function TLPlayer({ frames, onBaked }: { frames: string[]; onBaked: () => void }) {
   const [i, setI] = useState(0);
   const [playing, setPlaying] = useState(true);
   const [fps, setFps] = useState(12);
+  const [baking, setBaking] = useState(false);
+  const [bakeErr, setBakeErr] = useState(false);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const canBake = isVideoExportAvailable();
+
+  // Same native image-sequence encoder Clay uses — a timelapse set is the
+  // same shape (ordered stills at a fixed rate), so the bake is identical.
+  const bake = async () => {
+    if (!canBake || baking || frames.length === 0) return;
+    setBaking(true);
+    setBakeErr(false);
+    try {
+      const { uri, path } = await newVideoOutputPath();
+      await exportImageSequence(frames, fps, path);
+      await saveVideo(uri);
+      onBaked();
+    } catch {
+      setBakeErr(true);
+    } finally {
+      setBaking(false);
+    }
+  };
 
   useEffect(() => {
     if (!playing || frames.length === 0) return;
@@ -360,7 +390,17 @@ function TLPlayer({ frames }: { frames: string[] }) {
             <Text style={[styles.vBtnText, fps === f && { color: C.red }]}>{f}fps</Text>
           </Pressable>
         ))}
+        {canBake && (
+          <Pressable onPress={bake} disabled={baking} style={[styles.tlBtn, { backgroundColor: C.red, borderColor: C.red }, baking && { opacity: 0.6 }]}>
+            <Text style={[styles.vBtnText, { color: "#fff" }]}>{baking ? "Baking…" : `⬇ MP4 @${fps}fps`}</Text>
+          </Pressable>
+        )}
       </View>
+      {bakeErr && (
+        <View style={styles.tlErr}>
+          <Mono color={C.red} size={11}>Bake failed — try a different frame rate, or re-shoot the set.</Mono>
+        </View>
+      )}
     </View>
   );
 }
@@ -381,7 +421,8 @@ const styles = StyleSheet.create({
   vBtn: { borderWidth: 1, borderColor: C.lineStrong, backgroundColor: "rgba(20,21,24,0.9)", paddingHorizontal: 13, paddingVertical: 11, borderRadius: 8 },
   vBtnText: { color: C.inkSoft, fontFamily: F.mono, fontSize: 12 },
   tlHud: { position: "absolute", top: 18, alignSelf: "center", backgroundColor: "rgba(0,0,0,0.5)", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 40 },
-  tlCtrls: { position: "absolute", bottom: 90, left: 0, right: 0, flexDirection: "row", justifyContent: "center", gap: 8 },
+  tlCtrls: { position: "absolute", bottom: 90, left: 0, right: 0, flexDirection: "row", justifyContent: "center", gap: 8, flexWrap: "wrap", paddingHorizontal: 12 },
+  tlErr: { position: "absolute", bottom: 64, left: 0, right: 0, alignItems: "center" },
   tlBtn: { borderWidth: 1, borderColor: C.lineStrong, backgroundColor: "rgba(20,21,24,0.9)", paddingHorizontal: 12, paddingVertical: 9, borderRadius: 8 },
   toast: { position: "absolute", bottom: 100, alignSelf: "center", backgroundColor: "rgba(0,0,0,0.8)", paddingHorizontal: 14, paddingVertical: 8, borderRadius: 40, borderWidth: 1, borderColor: C.line },
   editor: { flex: 1, backgroundColor: C.bg, justifyContent: "center", padding: 16, gap: 16 },

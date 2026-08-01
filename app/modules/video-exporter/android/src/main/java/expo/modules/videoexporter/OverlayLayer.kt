@@ -55,14 +55,6 @@ data class ExportClip(
     val span = (trimOut - trimIn).coerceAtLeast(0.0)
     return ((span / speed.coerceAtLeast(0.01)) * 1_000_000.0).toLong()
   }
-
-  /**
-   * Audio is a straight sample copy, which is only correct at 1x. A speed
-   * change needs real resampling (pitch-shifted) or time-stretching
-   * (pitch-preserved); neither is built, so a retimed clip contributes
-   * silence rather than audio that drifts against the retimed video.
-   */
-  fun canPassThroughAudio(): Boolean = !muted && speed == 1.0
 }
 
 /** The preview's on-screen footprint for each layer kind — must match src/timeline.ts. */

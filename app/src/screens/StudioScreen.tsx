@@ -925,9 +925,9 @@ function ClipPanel({
           {selected.speed !== 1 && (
             <View style={styles.warnBox}>
               <Mono color={C.device} size={10}>
-                The preview plays speed-changed audio (both pitch modes), but in a baked export this
-                clip is silent — retimed audio needs real resampling or time-stretching, which isn't
-                built yet. The video speed itself bakes correctly.
+                Exports bake retimed audio for real — resampled when pitch follows the speed,
+                time-stretched (WSOLA) when "keep original pitch" is on. This DSP is brand new and
+                untested on-device; if it ever fails, that clip bakes silent rather than out of sync.
               </Mono>
             </View>
           )}

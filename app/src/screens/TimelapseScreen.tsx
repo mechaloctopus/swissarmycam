@@ -112,11 +112,12 @@ export default function TimelapseScreen({ focused }: { focused: boolean }) {
           Frames save as a set · play them back in Library
         </Mono>
 
-        <View style={styles.note}>
-          <Mono color={C.device} size={10}>DEVICE-DEPENDENT</Mono>
+        <View style={[styles.note, { borderLeftColor: C.go }]}>
+          <Mono color={C.go} size={10}>REAL · NATIVE MP4 BAKE</Mono>
           <Text style={styles.noteText}>
-            Frames are saved locally and play back as a preview in Library. Stitching them into a
-            finished MP4 (with easing and deflicker) ships with the native video module — Phase 3.
+            Frames save locally as a set. Open the set in Library to preview it at 8/12/24fps and
+            bake it into a real MP4 at that rate — the same native image-sequence encoder the
+            Clay studio uses.
           </Text>
         </View>
       </ScrollView>

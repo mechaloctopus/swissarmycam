@@ -53,17 +53,33 @@ class VideoExportEngine(private val context: Context) {
     val outHeight = firstFormat.getInteger(MediaFormat.KEY_HEIGHT)
     firstProbe.release()
 
-    // The muxer's audio track has to be declared before the muxer starts, so
-    // the format is taken from the first clip that can actually contribute
-    // audio. Clips whose format doesn't match it contribute silence.
-    var audioFormatForMuxer: MediaFormat? = null
+    // ---- audio strategy --------------------------------------------------
+    // Probe every unmuted clip's audio format up front.
+    val audioProbes = mutableListOf<MediaFormat>()
+    var anyRetimed = false
     for (clip in clips) {
-      if (!clip.canPassThroughAudio()) continue
+      if (clip.muted) continue
+      if (clip.speed != 1.0) anyRetimed = true
       val probe = MediaExtractor().apply { setDataSource(clip.uri) }
       val at = findTrack(probe, "audio/")
-      if (at >= 0) audioFormatForMuxer = probe.getTrackFormat(at)
+      if (at >= 0) audioProbes.add(probe.getTrackFormat(at))
       probe.release()
-      if (audioFormatForMuxer != null) break
+    }
+    // Lossless passthrough when nothing needs retiming and every source's
+    // format can legally share one muxer track. Otherwise pre-render the
+    // whole audio timeline (decode → retime → AAC re-encode) — that path
+    // also fixes what used to be silent gaps from mixed-format 1x clips.
+    // A pre-render failure degrades to a silent export, never a failed one.
+    val passthroughOk = audioProbes.isNotEmpty() && !anyRetimed &&
+      audioProbes.all { audioFormatMatches(it, audioProbes[0]) }
+    val preRendered: AudioRenderer.Result? = if (audioProbes.isEmpty() || passthroughOk) null else try {
+      AudioRenderer.render(clips)
+    } catch (e: Exception) {
+      null
+    }
+    val audioFormatForMuxer: MediaFormat? = when {
+      passthroughOk -> audioProbes[0]
+      else -> preRendered?.format
     }
 
     val bitRate = (outWidth * outHeight * 4).coerceAtLeast(4_000_000)
@@ -345,37 +361,47 @@ class VideoExportEngine(private val context: Context) {
       encoder.signalEndOfInputStream()
       drainEncoder(true)
 
-      // Audio is copied through per clip and offset onto the timeline. Only
-      // 1x, unmuted clips whose format matches the muxer track contribute;
-      // anything else leaves a silent gap rather than a desynced one.
       if (muxerAudioTrack >= 0 && audioFormatForMuxer != null) {
-        val audioBufferInfo = MediaCodec.BufferInfo()
-        val audioBuf = ByteBuffer.allocate(1 shl 20)
-        for ((clipIndex, clip) in clips.withIndex()) {
-          if (!clip.canPassThroughAudio()) continue
-          val aEx = MediaExtractor().apply { setDataSource(clip.uri) }
-          val aTrack = findTrack(aEx, "audio/")
-          if (aTrack < 0 || !audioFormatMatches(aEx.getTrackFormat(aTrack), audioFormatForMuxer)) {
-            aEx.release()
-            continue
+        if (preRendered != null) {
+          // Retimed/re-encoded path: the whole timeline was pre-rendered as
+          // one continuous AAC stream — just hand its packets to the muxer.
+          val info = MediaCodec.BufferInfo()
+          for (p in preRendered.packets) {
+            info.set(0, p.data.size, p.ptsUs, p.flags)
+            muxer.writeSampleData(muxerAudioTrack, ByteBuffer.wrap(p.data), info)
           }
-          aEx.selectTrack(aTrack)
-          val trimInUs = (clip.trimIn * 1_000_000.0).toLong().coerceAtLeast(0L)
-          val trimOutUs = if (clip.trimOut > clip.trimIn) (clip.trimOut * 1_000_000.0).toLong() else Long.MAX_VALUE
-          aEx.seekTo(trimInUs, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
-          while (true) {
-            audioBuf.clear()
-            val size = aEx.readSampleData(audioBuf, 0)
-            if (size < 0) break
-            val ptsUs = aEx.sampleTime
-            if (ptsUs > trimOutUs) break
-            if (ptsUs >= trimInUs) {
-              audioBufferInfo.set(0, size, clipStartsUs[clipIndex] + (ptsUs - trimInUs), aEx.sampleFlags)
-              muxer.writeSampleData(muxerAudioTrack, audioBuf, audioBufferInfo)
+        } else {
+          // Lossless passthrough (every contributing clip is 1x, matching
+          // formats): copy samples per clip, offset onto the timeline. A
+          // muted clip leaves a silent gap.
+          val audioBufferInfo = MediaCodec.BufferInfo()
+          val audioBuf = ByteBuffer.allocate(1 shl 20)
+          for ((clipIndex, clip) in clips.withIndex()) {
+            if (clip.muted) continue
+            val aEx = MediaExtractor().apply { setDataSource(clip.uri) }
+            val aTrack = findTrack(aEx, "audio/")
+            if (aTrack < 0) {
+              aEx.release()
+              continue
             }
-            aEx.advance()
+            aEx.selectTrack(aTrack)
+            val trimInUs = (clip.trimIn * 1_000_000.0).toLong().coerceAtLeast(0L)
+            val trimOutUs = if (clip.trimOut > clip.trimIn) (clip.trimOut * 1_000_000.0).toLong() else Long.MAX_VALUE
+            aEx.seekTo(trimInUs, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
+            while (true) {
+              audioBuf.clear()
+              val size = aEx.readSampleData(audioBuf, 0)
+              if (size < 0) break
+              val ptsUs = aEx.sampleTime
+              if (ptsUs > trimOutUs) break
+              if (ptsUs >= trimInUs) {
+                audioBufferInfo.set(0, size, clipStartsUs[clipIndex] + (ptsUs - trimInUs), aEx.sampleFlags)
+                muxer.writeSampleData(muxerAudioTrack, audioBuf, audioBufferInfo)
+              }
+              aEx.advance()
+            }
+            aEx.release()
           }
-          aEx.release()
         }
       }
     } finally {
