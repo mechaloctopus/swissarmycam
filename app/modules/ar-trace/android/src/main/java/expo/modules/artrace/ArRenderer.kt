@@ -244,7 +244,27 @@ class ArRenderer(
     resetRequested.set(true)
   }
 
+  /**
+   * Shaders compile on the GPU at runtime, so a driver that rejects one is
+   * something no build can catch — and throwing here would take the whole GL
+   * thread (and the app) down. Report it and leave the programs at 0 instead;
+   * the draw calls skip themselves and the tab stays alive to say why.
+   */
   override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
+    try {
+      initGl()
+    } catch (e: Exception) {
+      onError(e.message ?: "This device's GPU rejected the AR shaders")
+    }
+  }
+
+  private fun initGl() {
+    // Cleared up front rather than in the catch: on EGL context recreation
+    // these still hold ids from the dead context, and whichever program does
+    // compile should keep working even if the other one doesn't.
+    bgProgram = 0
+    overlayProgram = 0
+
     val textures = IntArray(1)
     GLES20.glGenTextures(1, textures, 0)
     cameraTextureId = textures[0]
@@ -468,6 +488,7 @@ class ArRenderer(
   }
 
   private fun drawCameraBackground() {
+    if (bgProgram == 0) return
     GLES20.glDisable(GLES20.GL_DEPTH_TEST)
     GLES20.glDepthMask(false)
     GLES20.glDisable(GLES20.GL_BLEND)
@@ -493,6 +514,7 @@ class ArRenderer(
   }
 
   private fun drawOverlay(camera: Camera, pose: Pose) {
+    if (overlayProgram == 0) return
     ensureQuad(view.overlayWidthMeters.coerceIn(0.01f, 20f))
 
     GLES20.glEnable(GLES20.GL_BLEND)
