@@ -9,6 +9,7 @@ import { useSettings, DEFAULTS } from "../settings";
 import { loadPictureSizes, sortSizes } from "../caps";
 import { storageBytes, humanBytes, clearAllCaptures, countMedia } from "../store";
 import { useEntitlement } from "../entitlements";
+import { getApiKey, setApiKey } from "../nerf";
 
 const CAPS: { name: string; level: string; tone: string }[] = [
   { name: "Photo + video capture, flip, flash, torch, zoom", level: "Possible now", tone: C.go },
@@ -30,10 +31,11 @@ const CAPS: { name: string; level: string; tone: string }[] = [
   { name: "Room scan capture (guided multi-angle photo set)", level: "Possible now", tone: C.go },
   { name: "Underwater / record lock (hold-to-unlock touch guard)", level: "Possible now", tone: C.go },
   { name: "Claymation onion-skin capture + MP4 bake", level: "Possible now", tone: C.go },
-  { name: "NeRF reconstruction + AR measurement overlay", level: "Requires cloud compute", tone: C.attach },
+  { name: "Cloud 3D reconstruction — video → Gaussian Splat (KIRI Engine)", level: "Possible now", tone: C.go },
   { name: "AR surface-locked trace / mural projection (ARCore)", level: "Possible now", tone: C.go },
   { name: "In-app purchases (Google Play Billing)", level: "Possible now", tone: C.go },
-  { name: "NeRF scan capture from an imported video", level: "Possible now", tone: C.go },
+  { name: "Traversable 3D splat viewer — orbit / pan / zoom", level: "Possible now", tone: C.go },
+  { name: "AR measurement overlay on a finished scan", level: "Not built yet", tone: C.native },
   { name: "Microphone hardware inventory (real, per-device)", level: "Possible now", tone: C.go },
   { name: "Screen recording audio source (standard / camcorder / raw-no-AI)", level: "Possible now", tone: C.go },
   { name: "Capture video mic-array selection / forced-off noise suppression", level: "Not exposed by expo-camera", tone: C.native },
@@ -67,6 +69,9 @@ export default function SettingsScreen({ focused }: { focused: boolean }) {
   const { pro, trial, recurring, busy, error, buy, restore, redeemCode, available: billingAvailable } = useEntitlement();
   const [codeInput, setCodeInput] = useState("");
   const [codeMsg, setCodeMsg] = useState<string | null>(null);
+  const [nerfKeyInput, setNerfKeyInput] = useState("");
+  const [nerfKeySet, setNerfKeySet] = useState(false);
+  const [nerfMsg, setNerfMsg] = useState<string | null>(null);
   const [sizes, setSizes] = useState<string[]>([]);
   const [bytes, setBytes] = useState(0);
   const [counts, setCounts] = useState({ photos: 0, videos: 0 });
@@ -76,6 +81,7 @@ export default function SettingsScreen({ focused }: { focused: boolean }) {
     loadPictureSizes().then((s) => setSizes(sortSizes(s)));
     storageBytes().then(setBytes);
     countMedia().then(setCounts);
+    getApiKey().then((k) => setNerfKeySet(!!k));
   };
   useEffect(() => {
     if (focused) refresh();
@@ -100,6 +106,20 @@ export default function SettingsScreen({ focused }: { focused: boolean }) {
       { text: "Cancel", style: "cancel" },
       { text: "Reset", style: "destructive", onPress: reset },
     ]);
+
+  const saveNerfKey = async () => {
+    if (!nerfKeyInput.trim()) return;
+    await setApiKey(nerfKeyInput);
+    setNerfKeySet(true);
+    setNerfKeyInput("");
+    setNerfMsg("Key saved — cloud reconstruction is ready in Scan.");
+  };
+
+  const clearNerfKey = async () => {
+    await setApiKey("");
+    setNerfKeySet(false);
+    setNerfMsg("Key removed.");
+  };
 
   const submitCode = async () => {
     if (!codeInput.trim()) return;
@@ -268,6 +288,41 @@ export default function SettingsScreen({ focused }: { focused: boolean }) {
         <Pressable onPress={confirmClear} style={styles.dangerRow}>
           <Text style={styles.dangerText}>Clear all in-app media</Text>
         </Pressable>
+      </Section>
+
+      {/* NERF CLOUD */}
+      <Section title="NeRF cloud">
+        <Row
+          title="KIRI Engine API key"
+          hint={
+            nerfKeySet
+              ? "Key saved on this device. Scan → “Reconstruct from video” is enabled."
+              : "Powers Scan's video → 3D Gaussian Splat reconstruction. Create a free account at kiriengine.app, open the developer dashboard, and paste your API key here. Stored only on this device."
+          }
+          column
+        >
+          <View style={styles.codeRow}>
+            <TextInput
+              value={nerfKeyInput}
+              onChangeText={(t) => { setNerfKeyInput(t); setNerfMsg(null); }}
+              placeholder={nerfKeySet ? "Replace saved key…" : "Paste your API key"}
+              placeholderTextColor={C.inkFaint}
+              autoCapitalize="none"
+              autoCorrect={false}
+              secureTextEntry
+              style={styles.codeInput}
+            />
+            <Pressable onPress={saveNerfKey} disabled={!nerfKeyInput.trim()} style={[styles.codeBtn, !nerfKeyInput.trim() && { opacity: 0.5 }]}>
+              <Mono color="#fff" size={11}>Save</Mono>
+            </Pressable>
+          </View>
+          {nerfKeySet && (
+            <Pressable onPress={clearNerfKey} hitSlop={6}>
+              <Mono color={C.inkMute} size={11} style={{ marginTop: 10 }}>Remove saved key</Mono>
+            </Pressable>
+          )}
+          {nerfMsg && <Mono color={nerfMsg.startsWith("Key saved") ? C.go : C.inkMute} size={11} style={{ marginTop: 8 }}>{nerfMsg}</Mono>}
+        </Row>
       </Section>
 
       {/* CAPABILITY MAP */}

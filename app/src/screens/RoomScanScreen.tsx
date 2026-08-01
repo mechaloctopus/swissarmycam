@@ -8,6 +8,8 @@ import { Label, Mono, StatusPill } from "../components/ui";
 import { newScanSession, saveScanFrame, listScanSessions, deleteScanSession, ScanSession } from "../store";
 import { pickVideoFromLibrary } from "../media";
 import { useSettings } from "../settings";
+import { NerfJob, getApiKey, listJobs, uploadVideo, refreshJobStatus, downloadResult, removeJob } from "../nerf";
+import { SplatViewer } from "../components/SplatViewer";
 
 // Extracted frames are sampled at a fixed interval rather than a known frame
 // count, since getting a video's exact duration up front needs its own
@@ -36,6 +38,10 @@ export default function RoomScanScreen({ focused }: { focused: boolean }) {
   const [toast, setToast] = useState<string | null>(null);
   const [extracting, setExtracting] = useState(false);
   const [extractCount, setExtractCount] = useState(0);
+  const [hasKey, setHasKey] = useState(false);
+  const [jobs, setJobs] = useState<NerfJob[]>([]);
+  const [cloudBusy, setCloudBusy] = useState(false);
+  const [viewPath, setViewPath] = useState<string | null>(null);
 
   const sessionRef = useRef<string | null>(null);
   const idxRef = useRef(0);
@@ -45,6 +51,10 @@ export default function RoomScanScreen({ focused }: { focused: boolean }) {
   }, []);
   useEffect(() => {
     if (focused && !scanning) loadSessions();
+    if (focused) {
+      getApiKey().then((k) => setHasKey(!!k));
+      listJobs().then(setJobs);
+    }
   }, [focused, scanning, loadSessions]);
 
   const flash = (m: string) => {
@@ -88,6 +98,47 @@ export default function RoomScanScreen({ focused }: { focused: boolean }) {
     sessionRef.current = null;
     setScanning(false);
     setFrames([]);
+  };
+
+  // ---- cloud 3DGS reconstruction (KIRI Engine) --------------------------
+  const startReconstruction = async () => {
+    if (cloudBusy) return;
+    const uri = await pickVideoFromLibrary();
+    if (!uri) return;
+    setCloudBusy(true);
+    try {
+      const job = await uploadVideo(uri, `Scan ${new Date().toLocaleDateString()}`);
+      setJobs((js) => [job, ...js]);
+      flash("Uploaded — reconstruction takes ~7–20 min");
+    } catch (e) {
+      flash(e instanceof Error ? e.message : "Upload failed");
+    } finally {
+      setCloudBusy(false);
+    }
+  };
+
+  const pollJob = async (job: NerfJob) => {
+    try {
+      const next = await refreshJobStatus(job);
+      setJobs((js) => js.map((j) => (j.serialize === next.serialize ? next : j)));
+      if (next.status === "processing") flash("Still processing — check back in a few minutes");
+    } catch {
+      flash("Couldn't reach KIRI — check your connection");
+    }
+  };
+
+  const fetchJob = async (job: NerfJob) => {
+    if (cloudBusy) return;
+    setCloudBusy(true);
+    try {
+      const next = await downloadResult(job);
+      setJobs((js) => js.map((j) => (j.serialize === next.serialize ? next : j)));
+      flash("Scan downloaded — tap View to walk through it");
+    } catch (e) {
+      flash(e instanceof Error ? e.message : "Download failed");
+    } finally {
+      setCloudBusy(false);
+    }
   };
 
   /**
@@ -216,6 +267,65 @@ export default function RoomScanScreen({ focused }: { focused: boolean }) {
         it automatically into a scan set.
       </Mono>
 
+      <Text style={styles.sub}>Cloud reconstruction · 3D Gaussian Splat</Text>
+      {!hasKey ? (
+        <View style={styles.cloudNote}>
+          <Mono color={C.attach} size={10}>NEEDS A KIRI ENGINE API KEY</Mono>
+          <Text style={styles.cloudNoteText}>
+            Reconstruction runs on KIRI Engine's cloud (kiriengine.app): upload a walk-around video,
+            get back a traversable 3D Gaussian Splat you can orbit, pan and zoom right here. Add
+            your API key in Settings → NeRF cloud to enable it.
+          </Text>
+        </View>
+      ) : (
+        <>
+          <Pressable onPress={startReconstruction} disabled={cloudBusy} style={[styles.cloudBtn, cloudBusy && { opacity: 0.6 }]}>
+            {cloudBusy ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.cloudBtnText}>☁ Reconstruct from video → 3D scan</Text>}
+          </Pressable>
+          <Mono color={C.inkFaint} size={10} style={{ marginTop: 6 }}>
+            ≤1080p, ≤3 min video · processed by KIRI Engine (~7–20 min) · this is the one Lensii
+            feature that sends anything off-device, and only when you tap it.
+          </Mono>
+        </>
+      )}
+
+      {jobs.length > 0 && (
+        <View style={{ marginTop: 14, gap: 8 }}>
+          {jobs.map((j) => (
+            <View key={j.serialize} style={styles.jobRow}>
+              <View style={{ flex: 1 }}>
+                <Mono color={C.ink} size={11}>{j.name}</Mono>
+                <Mono
+                  color={j.status === "failed" ? C.red : j.status === "processing" ? C.device : C.go}
+                  size={9.5}
+                  style={{ marginTop: 2 }}
+                >
+                  {j.status === "processing" ? "PROCESSING…" : j.status.toUpperCase()}
+                </Mono>
+              </View>
+              {j.status === "processing" && (
+                <Pressable onPress={() => pollJob(j)} style={styles.jobBtn}>
+                  <Mono color={C.inkSoft} size={10}>Check</Mono>
+                </Pressable>
+              )}
+              {j.status === "done" && (
+                <Pressable onPress={() => fetchJob(j)} disabled={cloudBusy} style={[styles.jobBtn, { backgroundColor: C.go, borderColor: C.go }]}>
+                  <Mono color="#062" size={10}>Download</Mono>
+                </Pressable>
+              )}
+              {j.status === "downloaded" && j.localZip && (
+                <Pressable onPress={() => setViewPath(j.localZip!)} style={[styles.jobBtn, { backgroundColor: C.red, borderColor: C.red }]}>
+                  <Mono color="#fff" size={10}>View 3D</Mono>
+                </Pressable>
+              )}
+              <Pressable onPress={() => removeJob(j.serialize).then(() => listJobs().then(setJobs))} hitSlop={6} style={{ marginLeft: 8 }}>
+                <Mono color={C.inkMute} size={11}>✕</Mono>
+              </Pressable>
+            </View>
+          ))}
+        </View>
+      )}
+
       {sessions.length > 0 && (
         <>
           <Text style={styles.sub}>Saved scans ({sessions.length})</Text>
@@ -239,6 +349,8 @@ export default function RoomScanScreen({ focused }: { focused: boolean }) {
           <Mono color={C.ink} size={12}>{toast}</Mono>
         </View>
       )}
+
+      {viewPath && <SplatViewer modelPath={viewPath} onClose={() => setViewPath(null)} />}
     </ScrollView>
   );
 }
@@ -251,6 +363,12 @@ const styles = StyleSheet.create({
   newScanBtn: { marginTop: 22, backgroundColor: C.red, borderRadius: 8, paddingVertical: 15, alignItems: "center" },
   newScanText: { color: "#fff", fontFamily: F.sansMed, fontWeight: "700", fontSize: 15 },
   importBtn: { marginTop: 10, backgroundColor: C.surface, borderWidth: 1, borderColor: C.lineStrong, borderRadius: 8, paddingVertical: 13, alignItems: "center" },
+  cloudBtn: { marginTop: 4, backgroundColor: C.attach, borderRadius: 8, paddingVertical: 14, alignItems: "center" },
+  cloudBtnText: { color: "#fff", fontFamily: F.sansMed, fontWeight: "700", fontSize: 13.5 },
+  cloudNote: { backgroundColor: C.surface, borderWidth: 1, borderColor: C.line, borderLeftWidth: 3, borderLeftColor: C.attach, borderRadius: 8, padding: 14, gap: 6 },
+  cloudNoteText: { color: C.inkMute, fontSize: 12.5, lineHeight: 18 },
+  jobRow: { flexDirection: "row", alignItems: "center", backgroundColor: C.surface, borderWidth: 1, borderColor: C.line, borderRadius: 10, padding: 12 },
+  jobBtn: { borderWidth: 1, borderColor: C.lineStrong, borderRadius: 40, paddingHorizontal: 12, paddingVertical: 7, backgroundColor: C.bg2 },
   importText: { color: C.inkSoft, fontFamily: F.sansMed, fontWeight: "600", fontSize: 13.5 },
   sessionRow: { flexDirection: "row", alignItems: "center", backgroundColor: C.surface, borderWidth: 1, borderColor: C.line, borderRadius: 10, padding: 10, marginBottom: 8 },
   sessionCover: { width: 48, height: 48, borderRadius: 6 },

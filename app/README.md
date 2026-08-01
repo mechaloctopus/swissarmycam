@@ -31,12 +31,12 @@ where you'd start the trial or enter a code) — see "Selling on Google Play" be
 | **Capture** | ✅ Works | **Photo + video** modes. Front/rear flip, flash (off/auto/on), **torch**, **continuous zoom slider**, rule-of-thirds / golden / square grid, electronic level (accelerometer), reticle, self-timer. Video honors the mic + resolution settings. Saves in-app + optional auto-save to Photos. **Analyze** runs on-device visual intelligence over your last photo — colour palette, **OCR text extraction** and **scene/object labeling** (MLKit, fully offline), folded in from what used to be a separate Lab tab. **Underwater / record lock**: engage manually or auto-engage the moment recording starts — every control except a deliberate 1.2s hold-to-unlock goes dead to touch, so water pressure/droplets on the screen can't stop or change a recording. Screen stays awake for the whole take. |
 | **Timelapse** | ✅ Works | Intervalometer (1–60 s), live frame counter, frames saved as a set, **played back** in Library at 8/12/24fps — and **baked into a real MP4** at that rate with the same native image-sequence encoder Clay uses. |
 | **Clay** | ✅ Works | **Claymation / stop-motion studio**: shoot one frame at a time with an **onion-skin guide** — the last frame renders semi-transparent over the live viewfinder so you can see exactly how far to nudge the subject. Undo last frame, adjust onion opacity, then **bake the set into a real MP4** at 8/12/24fps via a native image-sequence encoder (reuses the video-exporter module's EGL/encoder pipeline — no decoder needed for this one). |
-| **Scan** | ✅ Works | **NeRF Measure, phase one**: guided multi-angle overlapping photo capture of a room or object, saved as a set. The real, on-device half of the feature — reconstructing a scan into a 3D model and overlaying AR measurements needs cloud compute (see Tools). |
+| **Scan** | ✅ Works | Two halves. **Guided capture**: multi-angle overlapping photo capture of a room or object, saved as a set. **Cloud reconstruction**: pick any video (≤1080p, ≤3 min) and Lensii uploads it to the **KIRI Engine** API, which computes a **3D Gaussian Splat** — the 2026 successor to NeRF that rasterizes with plain WebGL — in ~7–20 minutes. Check status, download the model, then **open it in the built-in traversable viewer**: drag to orbit, two fingers to pan, pinch to zoom. Needs a free KIRI API key pasted into Settings → NeRF cloud; this is the one feature that sends anything off-device, and only when you tap it. |
 | **Trace** | ✅ Works | **AR surface-locked trace / mural projection**: tap a real-world surface to drop an **ARCore** anchor, import a reference image, and it renders projected onto that surface — the lock comes from ARCore's own world-tracking (SLAM), not app math, so it's meant to hold steady as you move around rather than drift. Adjust opacity/size/rotation and nudge position within the lock; a separate **digital camera zoom** magnifies the view for detail work without ever touching the anchor. A "lock adjust" toggle freezes the controls once you're happy. Needs a Google-certified ARCore device; the app checks and offers to install Google Play Services for AR if it's missing. |
 | **Library** | ✅ Works | Local-first grid of **photos + videos**, fullscreen photo viewer, **photo editor** (rotate / flip / crop 1:1 → saves a non-destructive copy, via expo-image-manipulator), **video player**, **timelapse playback** (8/12/24 fps), **share**, save-to-Photos, delete. |
-| **Studio** | ✅ Works | **The keyframe video editor** — one screen, replacing the old split Editor/Studio. Build a **sequence of clips** (add, reorder, trim, per-clip speed) with **dip-to-black transitions** between them, then layer **images, GIFs, videos and text** over the whole timeline. Every layer has its own **in/out point** (pop in, pop out), **fade in/out**, optional **green-screen key**, and **keyframed** position / scale / rotation / opacity with **easing** (linear, ease-in, ease-out, ease-in-out). Drag or pinch a layer straight on the canvas and it writes a keyframe at the playhead; a **CapCut-style timeline** gives every layer a lane with draggable in/out handles, keyframe diamonds you can tap-to-seek or drag-to-retime, a scrubbable playhead and zoom. Per-clip **trim, speed (0.25×–4×), pitch-preserve toggle and mute**. Mixed-resolution clips are letterboxed into the output rather than stretched. **Speed-changed audio bakes for real**: resampled (pitch follows speed) or **WSOLA time-stretched** (pitch preserved), pre-rendered as one continuous AAC track so cuts can never drift — with a silent-fallback if the DSP fails on a device, never a desynced export. Video overlay layers play **live** in the preview. **Export bakes a real MP4** — native MediaCodec decode → GLES composite → MediaCodec encode, drawing every layer at its interpolated pose for that frame's exact timestamp, honouring in/out windows and fades, chroma-keying overlay clips per frame with their own decoders. |
+| **Studio** | ✅ Works | **The keyframe video editor** — one screen, replacing the old split Editor/Studio. **Pro-grade editing feel**: full **undo/redo** history (one entry per gesture, not per pixel), **snapping** everywhere — timeline trims/moves/keyframes snap to the playhead, clip cuts and whole seconds; canvas drags snap to center with alignment guides — **frame-step transport** (±1 frame at 30fps) and jump-to-next-cut/keyframe, haptic ticks on snap engage, and **automatic project autosave** with one-tap "Resume last project". Build a **sequence of clips** (add, reorder, trim, per-clip speed) with **dip-to-black transitions** between them, then layer **images, GIFs, videos and text** over the whole timeline. Every layer has its own **in/out point** (pop in, pop out), **fade in/out**, optional **green-screen key**, and **keyframed** position / scale / rotation / opacity with **easing** (linear, ease-in, ease-out, ease-in-out). Drag or pinch a layer straight on the canvas and it writes a keyframe at the playhead; a **CapCut-style timeline** gives every layer a lane with draggable in/out handles, keyframe diamonds you can tap-to-seek or drag-to-retime, a scrubbable playhead and zoom. Per-clip **trim, speed (0.25×–4×), pitch-preserve toggle and mute**. Mixed-resolution clips are letterboxed into the output rather than stretched. **Speed-changed audio bakes for real**: resampled (pitch follows speed) or **WSOLA time-stretched** (pitch preserved), pre-rendered as one continuous AAC track so cuts can never drift — with a silent-fallback if the DSP fails on a device, never a desynced export. Video overlay layers play **live** in the preview. **Export bakes a real MP4** — native MediaCodec decode → GLES composite → MediaCodec encode, drawing every layer at its interpolated pose for that frame's exact timestamp, honouring in/out windows and fades, chroma-keying overlay clips per frame with their own decoders. |
 | **Attachments** | ✅ Works | **Device & module inspector**: model / OS / memory (expo-device), detected camera resolutions, **real Camera2 sensor characteristics** per lens (focal lengths, apertures, ISO range, exposure range, sensor size), **real microphone hardware inventory** (type, location, directionality, position — via `AudioManager.getMicrophones()`, honestly reflecting what each device actually reports rather than assuming a mic array exists), live **sensor scan** (accelerometer / gyro / magnetometer / barometer), and an honest "no external modules detected". USB-C thermal/IR/UV & BLE shutters plug in via the native module (Phase 7). |
-| **Tools** | ✅ Works | **Unit converter** (length, volume, weight, temperature — cm↔in↔ft↔mi, gal↔L↔cups, etc.), and the **NeRF Measure** card — capture is real (see Scan tab); reconstruction into a 3D model + AR measurement overlay is honestly staged as needing cloud compute, not faked. |
+| **Tools** | ✅ Works | **Unit converter** (length, volume, weight, temperature — cm↔in↔ft↔mi, gal↔L↔cups, etc.), and the **NeRF Measure** card — capture and cloud reconstruction are real now (see Scan tab); the AR measurement overlay on a finished scan is the remaining staged piece. |
 | **Settings** | ✅ Works | Full **customization hub** — see below — plus honest capability map, privacy, storage usage, reset. |
 | **Screen** | ✅ Works | **Real system-wide screen recording** via Android's MediaProjection: standard OS consent flow, foreground-service-backed capture (with the required Android 14+ persistent notification), optional mic audio, saves straight to Library. Facecam bubble, game mode, and export presets are next. |
 
@@ -136,6 +136,26 @@ One-time setup (nobody but a project owner with GCP access can do this part):
 6. Run the workflow from the Actions tab (`Firebase Test Lab (Robo smoke test)` → Run workflow), or
    ask Claude to trigger it.
 
+## Cloud 3D reconstruction (KIRI Engine) setup
+
+Scan's "Reconstruct from video → 3D scan" uses the [KIRI Engine](https://www.kiriengine.app)
+open API for the heavy compute (photogrammetry → 3D Gaussian Splatting). Everything else in
+Lensii is on-device; this feature uploads the chosen video to KIRI's servers, and only when
+you explicitly tap it.
+
+One-time setup (each user supplies their own key — nothing is committed or shared):
+
+1. Create a free account at [kiriengine.app](https://www.kiriengine.app) and open the
+   **developer / open API dashboard** to get an API key (free tier includes trial credits;
+   paid plans price per successful scan).
+2. In the app: **Settings → NeRF cloud → paste the key → Save.** It's stored only in the
+   app's local storage on that device.
+3. In **Scan**, tap **"☁ Reconstruct from video → 3D scan"**, pick a video (≤1080p, ≤3 min —
+   orbit the subject slowly with lots of overlap), wait ~7–20 minutes, then **Check → Download
+   → View 3D**. The viewer is a WebView running the standard Three.js Gaussian-splat renderer;
+   it needs internet the first time to fetch the renderer library from CDN, while the scan
+   itself is read from local storage.
+
 ## Selling on Google Play
 
 **Monetization:** Capture and Library are free forever, no account or purchase needed. Every
@@ -165,7 +185,8 @@ pages are at the repo root ([`../privacy.html`](../privacy.html), [`../terms.htm
 - **Expo SDK 57 · React Native 0.86 · TypeScript**
 - `expo-camera` (viewfinder + capture), `expo-sensors` (level), `expo-media-library`
   (save to Photos), `expo-file-system` (local-first storage), `react-native-svg` (brand mark),
-  `expo-haptics`, `expo-image`, `react-native-safe-area-context`.
+  `expo-haptics`, `expo-image`, `react-native-safe-area-context`, `react-native-webview`
+  (the traversable 3D Gaussian Splat viewer).
 - Custom design system in `src/theme.ts` mirroring the website tokens (Swiss black / steel / red).
 
 ## Structure
@@ -200,5 +221,8 @@ The **AR Trace** module carries the same caveat, more so: it's real ARCore integ
 camera-background + anchor-relative overlay rendering, not a mock), but nothing in this environment
 can validate that a lock actually holds without drifting — that's SLAM tracking quality, which only
 shows up on a real device in a real room. CI proves it compiles; only trying it on your phone proves
-it tracks.
+it tracks. The **Scan cloud reconstruction** path is honest about its dependencies: the compute
+happens on KIRI Engine's servers (a true NeRF/3DGS reconstruction cannot run on a phone), the
+splat viewer fetches its renderer library from CDN, and the whole upload→poll→download→view loop
+is brand-new code that CI can only compile, not exercise against the live API.
 See the in-app **Settings → Capability map**.
