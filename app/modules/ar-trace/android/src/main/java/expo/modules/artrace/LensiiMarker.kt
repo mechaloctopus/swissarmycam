@@ -38,7 +38,7 @@ object LensiiMarker {
     var state = SEED
     fun next(): Int {
       state = state * 6364136223846793005L + 1442695040888963407L
-      return ((state ushr 33) and 0x7FFFFFFF).toInt()
+      return ((state ushr 33) and 0x7FFFFFFFL).toInt()
     }
 
     val margin = size * 0.06f // quiet white border — keep it when printing
@@ -78,7 +78,7 @@ object LensiiMarker {
 
     // Isolate each corner glyph in white first. Merged into the block field
     // they stop being unambiguous orientation references, which is their whole
-    // job — three different shapes in three corners is what tells the tracker
+    // job — four different shapes in four corners is what tells the tracker
     // which way up the marker is.
     paint.color = Color.WHITE
     canvas.drawRect(0f, 0f, margin + glyph + halo, margin + glyph + halo, paint)

@@ -41,6 +41,9 @@ export default function TraceScreen({ focused }: { focused: boolean }) {
   const [opacity, setOpacity] = useState(85);
   const [widthMm, setWidthMm] = useState(210); // A4 width — a sane default to trace at
   const [markerMm, setMarkerMm] = useState(100);
+  // Applying this rebuilds ARCore's image database, so let the stepper settle
+  // before handing the value over rather than reconfiguring on every tap.
+  const [appliedMarkerMm, setAppliedMarkerMm] = useState(100);
   const [rotation, setRotation] = useState(0);
   const [zoom, setZoom] = useState(100);
   const [offsetX, setOffsetX] = useState(0);
@@ -76,6 +79,11 @@ export default function TraceScreen({ focused }: { focused: boolean }) {
       cancelled = true;
     };
   }, [available]);
+
+  useEffect(() => {
+    const id = setTimeout(() => setAppliedMarkerMm(markerMm), 500);
+    return () => clearTimeout(id);
+  }, [markerMm]);
 
   const onLayout = useCallback((e: LayoutChangeEvent) => {
     viewSize.current = { width: e.nativeEvent.layout.width, height: e.nativeEvent.layout.height };
@@ -196,7 +204,7 @@ export default function TraceScreen({ focused }: { focused: boolean }) {
             imageUri={imageUri}
             overlayOpacity={opacity / 100}
             overlayWidthMeters={widthMm / 1000}
-            markerWidthMeters={markerMm / 1000}
+            markerWidthMeters={appliedMarkerMm / 1000}
             overlayRotation={rotation}
             overlayOffsetX={offsetX}
             overlayOffsetY={offsetY}
