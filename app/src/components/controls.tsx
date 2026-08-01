@@ -98,6 +98,7 @@ export function Stepper({
 export function Slider({
   value,
   onChange,
+  onBegin,
   min = 0,
   max = 100,
   step = 1,
@@ -105,6 +106,8 @@ export function Slider({
 }: {
   value: number;
   onChange: (v: number) => void;
+  /** Fires once when a drag starts — lets callers snapshot state for undo. */
+  onBegin?: () => void;
   min?: number;
   max?: number;
   step?: number;
@@ -135,6 +138,7 @@ export function Slider({
       onMoveShouldSetPanResponder: () => true,
       onPanResponderTerminationRequest: () => false,
       onPanResponderGrant: (_e, g) => {
+        onBegin?.();
         measure();
         // measureInWindow is async; use a microtask so geo is fresh on first touch.
         requestAnimationFrame(() => emit(g.x0));

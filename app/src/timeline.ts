@@ -329,3 +329,22 @@ export function serializeLayers(layers: Layer[]): string {
     }))
   );
 }
+
+/**
+ * Snaps a time to the nearest target within `threshold` seconds — used for
+ * keyframe retiming and lane trimming so edits land exactly on the playhead,
+ * cuts, or whole seconds instead of "almost". Returns the original time when
+ * nothing is close enough, and flags the hit so callers can fire a haptic.
+ */
+export function snapTime(t: number, targets: number[], threshold: number): { t: number; snapped: boolean } {
+  let best = t;
+  let bestDist = threshold;
+  for (const target of targets) {
+    const d = Math.abs(t - target);
+    if (d < bestDist) {
+      bestDist = d;
+      best = target;
+    }
+  }
+  return { t: best, snapped: best !== t };
+}

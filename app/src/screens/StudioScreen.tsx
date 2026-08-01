@@ -11,6 +11,8 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { Image } from "expo-image";
+import * as Haptics from "expo-haptics";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { useEventListener } from "expo";
 import { C, F } from "../theme";
@@ -42,6 +44,7 @@ import {
   totalDuration,
   clipAtTime,
   dipAmountAt,
+  snapTime,
   serializeLayers,
   serializeClips,
   IMAGE_BOX,
@@ -78,6 +81,58 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
   const [busy, setBusy] = useState(false);
   const [exporting, setExporting] = useState(false);
   const exportAvailable = useMemo(() => isVideoExportAvailable(), []);
+
+  // ---- undo/redo -------------------------------------------------------
+  // Snapshots of {clips, layers}. Every object inside is treated immutably
+  // everywhere in this file, so shallow array copies are safe snapshots.
+  type Snapshot = { clips: BaseClip[]; layers: Layer[] };
+  const undoStack = useRef<Snapshot[]>([]);
+  const redoStack = useRef<Snapshot[]>([]);
+  const [historyVersion, setHistoryVersion] = useState(0); // re-render for button states
+  const stateRef = useRef<Snapshot>({ clips: [], layers: [] });
+
+  /** Call BEFORE a mutation (or once at gesture start) to make it undoable. */
+  const pushHistory = useCallback(() => {
+    undoStack.current.push({ clips: [...stateRef.current.clips], layers: [...stateRef.current.layers] });
+    if (undoStack.current.length > 60) undoStack.current.shift();
+    redoStack.current = [];
+    setHistoryVersion((v) => v + 1);
+  }, []);
+
+  const undo = useCallback(() => {
+    const prev = undoStack.current.pop();
+    if (!prev) return;
+    redoStack.current.push({ clips: [...stateRef.current.clips], layers: [...stateRef.current.layers] });
+    setClips(prev.clips);
+    setLayers(prev.layers);
+    setHistoryVersion((v) => v + 1);
+  }, []);
+
+  const redo = useCallback(() => {
+    const next = redoStack.current.pop();
+    if (!next) return;
+    undoStack.current.push({ clips: [...stateRef.current.clips], layers: [...stateRef.current.layers] });
+    setClips(next.clips);
+    setLayers(next.layers);
+    setHistoryVersion((v) => v + 1);
+  }, []);
+
+  const haptic = useCallback(() => {
+    if (settingsRef.current.haptics) Haptics.selectionAsync();
+  }, []);
+
+  // ---- autosave / resume -----------------------------------------------
+  const [savedProject, setSavedProject] = useState<Snapshot | null>(null);
+  useEffect(() => {
+    AsyncStorage.getItem("lensii.studio.project")
+      .then((raw) => {
+        if (!raw) return;
+        const p = JSON.parse(raw) as Snapshot;
+        if (p.clips?.length) setSavedProject(p);
+      })
+      .catch(() => {});
+  }, []);
+
 
   const activeClip: BaseClip | null = clips[activeIndex] ?? null;
   const starts = useMemo(() => clipStartTimes(clips), [clips]);
@@ -185,6 +240,33 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
     setTimeout(() => setToast(null), 1800);
   };
 
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
+  stateRef.current = { clips, layers };
+
+  // Autosave the project (debounced) so closing the app never loses an edit.
+  useEffect(() => {
+    if (clips.length === 0) return;
+    const id = setTimeout(() => {
+      AsyncStorage.setItem("lensii.studio.project", JSON.stringify({ clips, layers })).catch(() => {});
+    }, 800);
+    return () => clearTimeout(id);
+  }, [clips, layers]);
+
+  const resumeSaved = () => {
+    if (!savedProject) return;
+    // Bump the id counter past anything in the saved project so new
+    // layers/clips can't collide with restored ids.
+    let maxN = 0;
+    for (const l of savedProject.layers) maxN = Math.max(maxN, parseInt(l.id.slice(1), 10) || 0);
+    for (const c of savedProject.clips) maxN = Math.max(maxN, parseInt(c.id.slice(1), 10) || 0);
+    seq = Math.max(seq, maxN);
+    setClips(savedProject.clips);
+    setLayers(savedProject.layers);
+    setActiveIndex(0);
+    setTab("layers");
+  };
+
   const selected = layers.find((l) => l.id === selectedId) ?? null;
 
   const patchLayer = useCallback((id: string, fn: (l: Layer) => Layer) => {
@@ -206,6 +288,7 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
     try {
       const uri = await pickVideoFromLibrary();
       if (!uri) return flash("Nothing selected");
+      pushHistory();
       const c = makeClip(uri, `C${++seq}`);
       setClips((cs) => [...cs, c]);
       setSelectedClipId(c.id);
@@ -219,6 +302,7 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
     setClips((cs) => cs.map((c) => (c.id === id ? { ...c, ...patch } : c)));
 
   const removeClip = (id: string) => {
+    pushHistory();
     setClips((cs) => {
       const next = cs.filter((c) => c.id !== id);
       setActiveIndex((i) => Math.max(0, Math.min(i, next.length - 1)));
@@ -227,7 +311,8 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
     setSelectedClipId(null);
   };
 
-  const moveClip = (index: number, dir: -1 | 1) =>
+  const moveClip = (index: number, dir: -1 | 1) => {
+    pushHistory();
     setClips((cs) => {
       const j = index + dir;
       if (j < 0 || j >= cs.length) return cs;
@@ -235,8 +320,10 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
       [next[index], next[j]] = [next[j], next[index]];
       return next;
     });
+  };
 
   const addLayer = (partial: Partial<Layer> & { kind: Layer["kind"] }) => {
+    pushHistory();
     const id = nextId();
     const dur = timelineDuration || 5;
     // New layers start at the playhead and run to the end — drag the lane's
@@ -285,6 +372,7 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
 
   const deleteSelected = () => {
     if (!selected) return;
+    pushHistory();
     setLayers((ls) => ls.filter((l) => l.id !== selected.id));
     setSelectedId(null);
     setTab("layers");
@@ -292,6 +380,7 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
 
   const duplicateSelected = () => {
     if (!selected) return;
+    pushHistory();
     const id = nextId();
     setLayers((ls) => [...ls, { ...selected, id, keyframes: selected.keyframes.map((k) => ({ ...k })) }]);
     setSelectedId(id);
@@ -300,6 +389,58 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
   const patchPose = (patch: Partial<Keyframe>) => {
     if (!selected) return;
     patchLayer(selected.id, (l) => writeTransformAt(l, timelineTime, patch));
+  };
+
+  // ---- canvas drag with centering guides --------------------------------
+  const [dragging, setDragging] = useState(false);
+  const [guides, setGuides] = useState({ v: false, h: false });
+
+  /** The known preview footprint for center-snapping; text width is unknown. */
+  const boxFor = (l: Layer): { w: number; h: number } | null => {
+    if (l.kind === "image" || l.kind === "gif") return { w: IMAGE_BOX, h: IMAGE_BOX };
+    if (l.kind === "video") return { w: VIDEO_BOX_W, h: VIDEO_BOX_H };
+    return null;
+  };
+
+  const handleCanvasDrag = (l: Layer, x: number, y: number) => {
+    let nx = x;
+    let ny = y;
+    let v = false;
+    let h = false;
+    const box = boxFor(l);
+    if (box && canvas.w > 0) {
+      const SNAP = 7;
+      const cx = canvas.w / 2 - box.w / 2;
+      const cy = canvas.h / 2 - box.h / 2;
+      if (Math.abs(x - cx) < SNAP) {
+        nx = cx;
+        v = true;
+      }
+      if (Math.abs(y - cy) < SNAP) {
+        ny = cy;
+        h = true;
+      }
+    }
+    if ((v && !guides.v) || (h && !guides.h)) haptic();
+    setGuides({ v, h });
+    patchLayer(l.id, (cur) => writeTransformAt(cur, timelineTime, { x: nx, y: ny }));
+  };
+
+  // ---- transport helpers -------------------------------------------------
+  const FRAME = 1 / 30;
+  const stepFrame = (dir: -1 | 1) => seekTimeline(Math.max(0, Math.min(timelineDuration, timelineTime + dir * FRAME)));
+
+  /** Jump to the previous/next "moment that matters": keyframes of the selected layer + cuts. */
+  const jumpMoment = (dir: -1 | 1) => {
+    const times: number[] = [...starts.slice(1)];
+    if (selected) for (const k of selected.keyframes) times.push(k.t);
+    times.sort((a, b) => a - b);
+    const EPS = 0.02;
+    const next = dir === 1 ? times.find((t) => t > timelineTime + EPS) : [...times].reverse().find((t) => t < timelineTime - EPS);
+    if (next != null) {
+      seekTimeline(next);
+      haptic();
+    }
   };
 
   const runExport = async () => {
@@ -349,6 +490,14 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
             <Text style={styles.primaryBtnText}>{busy ? "Opening…" : "⤓  Import from gallery"}</Text>
           </Pressable>
 
+          {savedProject && (
+            <Pressable onPress={resumeSaved} style={styles.resumeBtn}>
+              <Text style={styles.resumeText}>
+                ⟲  Resume last project · {savedProject.clips.length} clip{savedProject.clips.length === 1 ? "" : "s"}, {savedProject.layers.length} layer{savedProject.layers.length === 1 ? "" : "s"}
+              </Text>
+            </Pressable>
+          )}
+
           {videos.length > 0 && (
             <>
               <Text style={styles.sub}>From Library ({videos.length})</Text>
@@ -377,9 +526,14 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
         <Pressable onPress={() => { setClips([]); setActiveIndex(0); }} hitSlop={8}>
           <Mono color={C.inkMute} size={11}>‹ new</Mono>
         </Pressable>
-        <Mono color={C.inkMute} size={11}>
-          {layers.length} LAYER{layers.length === 1 ? "" : "S"}
-        </Mono>
+        <View style={{ flexDirection: "row", gap: 14, alignItems: "center" }}>
+          <Pressable onPress={undo} disabled={undoStack.current.length === 0} hitSlop={8}>
+            <Text style={{ color: undoStack.current.length ? C.ink : C.inkFaint, fontSize: 17 }}>↺</Text>
+          </Pressable>
+          <Pressable onPress={redo} disabled={redoStack.current.length === 0} hitSlop={8}>
+            <Text style={{ color: redoStack.current.length ? C.ink : C.inkFaint, fontSize: 17 }}>↻</Text>
+          </Pressable>
+        </View>
         {exportAvailable ? (
           <Pressable
             onPress={runExport}
@@ -408,10 +562,20 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
               setSelectedId(id);
               setTab("animate");
             }}
-            onDrag={(x, y) => patchLayer(l.id, (cur) => writeTransformAt(cur, timelineTime, { x, y }))}
+            onDragStart={() => {
+              pushHistory();
+              setDragging(true);
+            }}
+            onDragEnd={() => {
+              setDragging(false);
+              setGuides({ v: false, h: false });
+            }}
+            onDrag={(x, y) => handleCanvasDrag(l, x, y)}
             onPinch={(s) => patchLayer(l.id, (cur) => writeTransformAt(cur, timelineTime, { scale: s }))}
           />
         ))}
+        {dragging && guides.v && <View pointerEvents="none" style={[styles.guide, { left: canvas.w / 2 - 0.5, top: 0, bottom: 0, width: 1 }]} />}
+        {dragging && guides.h && <View pointerEvents="none" style={[styles.guide, { top: canvas.h / 2 - 0.5, left: 0, right: 0, height: 1 }]} />}
         {/* Dip transitions darken the preview exactly as they will the bake. */}
         <View
           pointerEvents="none"
@@ -420,8 +584,20 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
       </View>
 
       <View style={styles.transport}>
+        <Pressable onPress={() => jumpMoment(-1)} hitSlop={6} style={styles.stepBtn}>
+          <Text style={styles.stepText}>|◀</Text>
+        </Pressable>
+        <Pressable onPress={() => stepFrame(-1)} hitSlop={6} style={styles.stepBtn}>
+          <Text style={styles.stepText}>−1f</Text>
+        </Pressable>
         <Pressable onPress={() => (playing ? player.pause() : player.play())} style={styles.playBtn}>
           <Text style={{ color: "#fff", fontSize: 15 }}>{playing ? "❚❚" : "▶"}</Text>
+        </Pressable>
+        <Pressable onPress={() => stepFrame(1)} hitSlop={6} style={styles.stepBtn}>
+          <Text style={styles.stepText}>+1f</Text>
+        </Pressable>
+        <Pressable onPress={() => jumpMoment(1)} hitSlop={6} style={styles.stepBtn}>
+          <Text style={styles.stepText}>▶|</Text>
         </Pressable>
         <Mono color={C.ink} size={11}>{timelineTime.toFixed(2)}s</Mono>
         <View style={{ flex: 1 }} />
@@ -447,8 +623,14 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
           setTab("animate");
         }}
         onTrimLayer={(id, tIn, tOut) => patchLayer(id, (l) => ({ ...l, tIn, tOut }))}
-        onMoveKeyframe={(id, from, to) => patchLayer(id, (l) => retimeKeyframe(l, from, to))}
+        onMoveKeyframe={(id, from, to) => {
+          pushHistory();
+          patchLayer(id, (l) => retimeKeyframe(l, from, to));
+        }}
         onTapKeyframe={seekTimeline}
+        onGestureStart={pushHistory}
+        snapTargets={[timelineTime, ...starts.slice(1)]}
+        onSnap={haptic}
       />
 
       <View style={styles.tabRow}>
@@ -525,12 +707,18 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
             layer={selected}
             t={timelineTime}
             duration={timelineDuration}
+            onBegin={pushHistory}
             onPatchPose={patchPose}
             onAddKeyframe={() => {
+              pushHistory();
+              haptic();
               patchLayer(selected.id, (l) => addKeyframeAt(l, timelineTime));
               flash(`Keyframe at ${timelineTime.toFixed(2)}s`);
             }}
-            onRemoveKeyframe={(t) => patchLayer(selected.id, (l) => removeKeyframeAt(l, t))}
+            onRemoveKeyframe={(t) => {
+              pushHistory();
+              patchLayer(selected.id, (l) => removeKeyframeAt(l, t));
+            }}
             onPatchLayer={(patch) => patchLayer(selected.id, (l) => ({ ...l, ...patch }))}
             onSeek={seekTimeline}
             onDelete={deleteSelected}
@@ -546,6 +734,7 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
             selectedClipId={selectedClipId}
             sourceDuration={sourceDuration}
             busy={busy}
+            onBegin={pushHistory}
             onSelectClip={(id, index) => {
               setSelectedClipId(id);
               seekTimeline(starts[index] ?? 0);
@@ -610,6 +799,7 @@ function AnimatePanel({
   layer,
   t,
   duration,
+  onBegin,
   onPatchPose,
   onAddKeyframe,
   onRemoveKeyframe,
@@ -621,6 +811,8 @@ function AnimatePanel({
   layer: Layer;
   t: number;
   duration: number;
+  /** Snapshot-for-undo hook, fired once when a slider drag begins. */
+  onBegin: () => void;
   onPatchPose: (p: Partial<Keyframe>) => void;
   onAddKeyframe: () => void;
   onRemoveKeyframe: (t: number) => void;
@@ -665,13 +857,13 @@ function AnimatePanel({
       </Mono>
 
       <Ctrl label="Size">
-        <Slider value={Math.round(pose.scale * 100)} min={10} max={500} step={5} onChange={(v) => onPatchPose({ scale: v / 100 })} width={132} />
+        <Slider onBegin={onBegin} value={Math.round(pose.scale * 100)} min={10} max={500} step={5} onChange={(v) => onPatchPose({ scale: v / 100 })} width={132} />
       </Ctrl>
       <Ctrl label="Rotate">
-        <Slider value={Math.round(pose.rotation)} min={-180} max={180} step={1} onChange={(v) => onPatchPose({ rotation: v })} width={132} />
+        <Slider onBegin={onBegin} value={Math.round(pose.rotation)} min={-180} max={180} step={1} onChange={(v) => onPatchPose({ rotation: v })} width={132} />
       </Ctrl>
       <Ctrl label="Opacity">
-        <Slider value={Math.round(pose.opacity)} min={0} max={100} step={5} onChange={(v) => onPatchPose({ opacity: v })} width={132} />
+        <Slider onBegin={onBegin} value={Math.round(pose.opacity)} min={0} max={100} step={5} onChange={(v) => onPatchPose({ opacity: v })} width={132} />
       </Ctrl>
       <Ctrl label="Easing → next">
         <Segmented
@@ -683,23 +875,23 @@ function AnimatePanel({
 
       <Text style={styles.groupLabel}>Timing · pop in / pop out</Text>
       <Ctrl label={`In · ${layer.tIn.toFixed(1)}s`}>
-        <Slider value={layer.tIn} min={0} max={Math.max(0.1, duration)} step={0.05} onChange={(v) => onPatchLayer({ tIn: Math.min(v, layer.tOut - 0.1) })} width={132} />
+        <Slider onBegin={onBegin} value={layer.tIn} min={0} max={Math.max(0.1, duration)} step={0.05} onChange={(v) => onPatchLayer({ tIn: Math.min(v, layer.tOut - 0.1) })} width={132} />
       </Ctrl>
       <Ctrl label={`Out · ${layer.tOut.toFixed(1)}s`}>
-        <Slider value={layer.tOut} min={0} max={Math.max(0.1, duration)} step={0.05} onChange={(v) => onPatchLayer({ tOut: Math.max(v, layer.tIn + 0.1) })} width={132} />
+        <Slider onBegin={onBegin} value={layer.tOut} min={0} max={Math.max(0.1, duration)} step={0.05} onChange={(v) => onPatchLayer({ tOut: Math.max(v, layer.tIn + 0.1) })} width={132} />
       </Ctrl>
       <Ctrl label={`Fade in · ${layer.fadeIn.toFixed(1)}s`}>
-        <Slider value={layer.fadeIn} min={0} max={3} step={0.1} onChange={(v) => onPatchLayer({ fadeIn: v })} width={132} />
+        <Slider onBegin={onBegin} value={layer.fadeIn} min={0} max={3} step={0.1} onChange={(v) => onPatchLayer({ fadeIn: v })} width={132} />
       </Ctrl>
       <Ctrl label={`Fade out · ${layer.fadeOut.toFixed(1)}s`}>
-        <Slider value={layer.fadeOut} min={0} max={3} step={0.1} onChange={(v) => onPatchLayer({ fadeOut: v })} width={132} />
+        <Slider onBegin={onBegin} value={layer.fadeOut} min={0} max={3} step={0.1} onChange={(v) => onPatchLayer({ fadeOut: v })} width={132} />
       </Ctrl>
 
       {layer.kind === "text" && (
         <>
           <Text style={styles.groupLabel}>Text</Text>
           <Ctrl label="Font size">
-            <Slider value={layer.fontSize} min={12} max={90} step={2} onChange={(v) => onPatchLayer({ fontSize: v })} width={132} />
+            <Slider onBegin={onBegin} value={layer.fontSize} min={12} max={90} step={2} onChange={(v) => onPatchLayer({ fontSize: v })} width={132} />
           </Ctrl>
           <View style={styles.swatchRow}>
             {["#FFFFFF", "#000000", "#E0231C", "#37B36B", "#4C8DFF", "#E0A62A"].map((hex) => (
@@ -746,10 +938,10 @@ function AnimatePanel({
                 ))}
               </View>
               <Ctrl label="Threshold">
-                <Slider value={Math.round(layer.chroma.threshold * 100)} min={5} max={80} step={1} onChange={(v) => onPatchLayer({ chroma: { ...layer.chroma!, threshold: v / 100 } })} width={132} />
+                <Slider onBegin={onBegin} value={Math.round(layer.chroma.threshold * 100)} min={5} max={80} step={1} onChange={(v) => onPatchLayer({ chroma: { ...layer.chroma!, threshold: v / 100 } })} width={132} />
               </Ctrl>
               <Ctrl label="Edge softness">
-                <Slider value={Math.round(layer.chroma.smoothing * 100)} min={2} max={50} step={1} onChange={(v) => onPatchLayer({ chroma: { ...layer.chroma!, smoothing: v / 100 } })} width={132} />
+                <Slider onBegin={onBegin} value={Math.round(layer.chroma.smoothing * 100)} min={2} max={50} step={1} onChange={(v) => onPatchLayer({ chroma: { ...layer.chroma!, smoothing: v / 100 } })} width={132} />
               </Ctrl>
               <Mono color={C.inkFaint} size={9.5}>
                 The key is applied in the baked export. The preview above shows the layer un-keyed.
@@ -788,6 +980,7 @@ function ClipPanel({
   selectedClipId,
   sourceDuration,
   busy,
+  onBegin,
   onSelectClip,
   onPatchClip,
   onRemoveClip,
@@ -800,6 +993,7 @@ function ClipPanel({
   selectedClipId: string | null;
   sourceDuration: number;
   busy: boolean;
+  onBegin: () => void;
   onSelectClip: (id: string, index: number) => void;
   onPatchClip: (id: string, patch: Partial<BaseClip>) => void;
   onRemoveClip: (id: string) => void;
@@ -866,13 +1060,16 @@ function ClipPanel({
                 <Segmented
                   options={["none", "dip"] as const}
                   value={selected.transition}
-                  onChange={(v: Transition) => onPatchClip(selected.id, { transition: v })}
+                  onChange={(v: Transition) => {
+                    onBegin();
+                    onPatchClip(selected.id, { transition: v });
+                  }}
                   format={(v) => (v === "none" ? "Cut" : "Dip to black")}
                 />
               </Ctrl>
               {selected.transition === "dip" && (
                 <Ctrl label={`Length · ${selected.transitionDur.toFixed(1)}s`}>
-                  <Slider value={selected.transitionDur} min={0.2} max={2} step={0.1} onChange={(v) => onPatchClip(selected.id, { transitionDur: v })} width={132} />
+                  <Slider onBegin={onBegin} value={selected.transitionDur} min={0.2} max={2} step={0.1} onChange={(v) => onPatchClip(selected.id, { transitionDur: v })} width={132} />
                 </Ctrl>
               )}
             </>
@@ -880,10 +1077,10 @@ function ClipPanel({
 
           <Text style={styles.groupLabel}>Trim (source time)</Text>
           <Ctrl label={`Start · ${selected.trimIn.toFixed(1)}s`}>
-            <Slider value={selected.trimIn} min={0} max={max} step={0.1} onChange={(v) => onPatchClip(selected.id, { trimIn: Math.min(v, selected.trimOut - 0.2) })} width={132} />
+            <Slider onBegin={onBegin} value={selected.trimIn} min={0} max={max} step={0.1} onChange={(v) => onPatchClip(selected.id, { trimIn: Math.min(v, selected.trimOut - 0.2) })} width={132} />
           </Ctrl>
           <Ctrl label={`End · ${selected.trimOut.toFixed(1)}s`}>
-            <Slider value={selected.trimOut} min={0} max={max} step={0.1} onChange={(v) => onPatchClip(selected.id, { trimOut: Math.max(v, selected.trimIn + 0.2) })} width={132} />
+            <Slider onBegin={onBegin} value={selected.trimOut} min={0} max={max} step={0.1} onChange={(v) => onPatchClip(selected.id, { trimOut: Math.max(v, selected.trimIn + 0.2) })} width={132} />
           </Ctrl>
           {selectedIndex !== activeIndex && (
             <Mono color={C.inkFaint} size={9}>
@@ -894,7 +1091,7 @@ function ClipPanel({
           <Text style={styles.groupLabel}>Speed</Text>
           <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>
             {[0.25, 0.5, 1, 1.5, 2, 3, 4].map((sp) => (
-              <Pressable key={sp} onPress={() => onPatchClip(selected.id, { speed: sp })} style={[styles.speedChip, selected.speed === sp && styles.speedChipOn]}>
+              <Pressable key={sp} onPress={() => { onBegin(); onPatchClip(selected.id, { speed: sp }); }} style={[styles.speedChip, selected.speed === sp && styles.speedChipOn]}>
                 <Text style={{ color: selected.speed === sp ? "#fff" : C.inkSoft, fontFamily: F.mono, fontSize: 11 }}>{sp}×</Text>
               </Pressable>
             ))}
@@ -910,14 +1107,14 @@ function ClipPanel({
                 Off = chipmunk / slow-mo voice, the classic speed-change sound.
               </Mono>
             </View>
-            <Pressable onPress={() => onPatchClip(selected.id, { preservePitch: !selected.preservePitch })} style={[styles.pill, selected.preservePitch && styles.pillOn]}>
+            <Pressable onPress={() => { onBegin(); onPatchClip(selected.id, { preservePitch: !selected.preservePitch }); }} style={[styles.pill, selected.preservePitch && styles.pillOn]}>
               <Mono color={selected.preservePitch ? "#fff" : C.inkMute} size={10}>{selected.preservePitch ? "ON" : "OFF"}</Mono>
             </Pressable>
           </View>
 
           <View style={[styles.rowBetween, { marginTop: 12 }]}>
             <Mono color={C.inkSoft} size={11}>Mute this clip</Mono>
-            <Pressable onPress={() => onPatchClip(selected.id, { muted: !selected.muted })} style={[styles.pill, selected.muted && styles.pillOn]}>
+            <Pressable onPress={() => { onBegin(); onPatchClip(selected.id, { muted: !selected.muted }); }} style={[styles.pill, selected.muted && styles.pillOn]}>
               <Mono color={selected.muted ? "#fff" : C.inkMute} size={10}>{selected.muted ? "ON" : "OFF"}</Mono>
             </Pressable>
           </View>
@@ -950,6 +1147,8 @@ function Sprite({
   t,
   selected,
   onSelect,
+  onDragStart,
+  onDragEnd,
   onDrag,
   onPinch,
 }: {
@@ -957,6 +1156,8 @@ function Sprite({
   t: number;
   selected: boolean;
   onSelect: (id: string) => void;
+  onDragStart?: () => void;
+  onDragEnd?: () => void;
   onDrag: (x: number, y: number) => void;
   onPinch: (scale: number) => void;
 }) {
@@ -971,6 +1172,7 @@ function Sprite({
     onMoveShouldSetPanResponder: () => true,
     onPanResponderGrant: (e) => {
       onSelect(layer.id);
+      onDragStart?.();
       const touches = e.nativeEvent.touches;
       start.current = {
         x: pose.x,
@@ -990,6 +1192,8 @@ function Sprite({
       }
       onDrag(start.current.x + g.dx, start.current.y + g.dy);
     },
+    onPanResponderRelease: () => onDragEnd?.(),
+    onPanResponderTerminate: () => onDragEnd?.(),
   });
 
   // Out-of-window layers stay mounted (a video layer keeps its playback
@@ -1086,6 +1290,11 @@ const styles = StyleSheet.create({
   spriteSel: { borderWidth: 1, borderColor: C.redBright, borderStyle: "dashed" },
   transport: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 14, paddingVertical: 10 },
   playBtn: { width: 34, height: 34, borderRadius: 17, backgroundColor: C.red, alignItems: "center", justifyContent: "center" },
+  stepBtn: { paddingHorizontal: 7, paddingVertical: 7, borderRadius: 6, backgroundColor: C.surface, borderWidth: 1, borderColor: C.line },
+  stepText: { color: C.inkSoft, fontFamily: F.mono, fontSize: 10 },
+  guide: { position: "absolute", backgroundColor: C.redBright, opacity: 0.85 },
+  resumeBtn: { marginTop: 10, borderWidth: 1, borderColor: C.lineStrong, borderRadius: 8, paddingVertical: 13, alignItems: "center", backgroundColor: C.surface },
+  resumeText: { color: C.inkSoft, fontFamily: F.mono, fontSize: 12 },
   zoomBtn: { width: 26, height: 26, borderRadius: 13, borderWidth: 1, borderColor: C.lineStrong, alignItems: "center", justifyContent: "center", backgroundColor: C.surface },
   zoomText: { color: C.inkSoft, fontSize: 14, lineHeight: 16 },
   tabRow: { flexDirection: "row", gap: 6, paddingHorizontal: 12, paddingTop: 10 },

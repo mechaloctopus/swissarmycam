@@ -1,7 +1,7 @@
 import React, { useMemo, useRef } from "react";
 import { View, Text, StyleSheet, PanResponder, ScrollView } from "react-native";
 import { C, F } from "../theme";
-import { Layer } from "../timeline";
+import { Layer, snapTime } from "../timeline";
 
 const RULER_H = 22;
 const LANE_H = 34;
@@ -20,6 +20,12 @@ export type TimelineProps = {
   onTrimLayer: (id: string, tIn: number, tOut: number) => void;
   onMoveKeyframe: (id: string, from: number, to: number) => void;
   onTapKeyframe: (t: number) => void;
+  /** Fires once at the start of any lane/keyframe drag — for undo snapshots. */
+  onGestureStart?: () => void;
+  /** Times worth snapping to (playhead, cuts). Whole seconds are added automatically. */
+  snapTargets?: number[];
+  /** Fires when a drag snaps onto a target — for haptic feedback. */
+  onSnap?: () => void;
 };
 
 /**
@@ -41,6 +47,9 @@ export function Timeline({
   onTrimLayer,
   onMoveKeyframe,
   onTapKeyframe,
+  onGestureStart,
+  snapTargets,
+  onSnap,
 }: TimelineProps) {
   const safeDuration = Math.max(duration, 0.1);
   const contentW = Math.max(safeDuration * pps, 1);
@@ -114,6 +123,9 @@ export function Timeline({
                 onTrim={onTrimLayer}
                 onMoveKeyframe={onMoveKeyframe}
                 onTapKeyframe={onTapKeyframe}
+                onGestureStart={onGestureStart}
+                snapTargets={snapTargets}
+                onSnap={onSnap}
               />
             ))
           )}
@@ -141,6 +153,9 @@ function Lane({
   onTrim,
   onMoveKeyframe,
   onTapKeyframe,
+  onGestureStart,
+  snapTargets,
+  onSnap,
 }: {
   layer: Layer;
   pps: number;
@@ -150,28 +165,44 @@ function Lane({
   onTrim: (id: string, tIn: number, tOut: number) => void;
   onMoveKeyframe: (id: string, from: number, to: number) => void;
   onTapKeyframe: (t: number) => void;
+  onGestureStart?: () => void;
+  snapTargets?: number[];
+  onSnap?: () => void;
 }) {
   const left = layer.tIn * pps;
   const width = Math.max((layer.tOut - layer.tIn) * pps, HANDLE_W * 2 + 6);
 
   const startRef = useRef({ tIn: layer.tIn, tOut: layer.tOut });
+  const wasSnapped = useRef(false);
+
+  // Snap to the playhead/cuts plus every whole second; ~8px of grab range.
+  const applySnap = (t: number): number => {
+    const targets = [...(snapTargets ?? [])];
+    for (let sec = 0; sec <= duration + 0.001; sec++) targets.push(sec);
+    const r = snapTime(t, targets, 8 / pps);
+    if (r.snapped && !wasSnapped.current) onSnap?.();
+    wasSnapped.current = r.snapped;
+    return r.t;
+  };
 
   const makeTrimResponder = (edge: "in" | "out") =>
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
       onPanResponderGrant: () => {
+        onGestureStart?.();
         onSelect(layer.id);
         startRef.current = { tIn: layer.tIn, tOut: layer.tOut };
+        wasSnapped.current = false;
       },
       onPanResponderMove: (_e, g) => {
         const dt = g.dx / pps;
         if (edge === "in") {
-          const next = Math.max(0, Math.min(startRef.current.tOut - 0.1, startRef.current.tIn + dt));
-          onTrim(layer.id, next, startRef.current.tOut);
+          const next = applySnap(Math.max(0, Math.min(startRef.current.tOut - 0.1, startRef.current.tIn + dt)));
+          onTrim(layer.id, Math.min(next, startRef.current.tOut - 0.1), startRef.current.tOut);
         } else {
-          const next = Math.min(duration, Math.max(startRef.current.tIn + 0.1, startRef.current.tOut + dt));
-          onTrim(layer.id, startRef.current.tIn, next);
+          const next = applySnap(Math.min(duration, Math.max(startRef.current.tIn + 0.1, startRef.current.tOut + dt)));
+          onTrim(layer.id, startRef.current.tIn, Math.max(next, startRef.current.tIn + 0.1));
         }
       },
     });
@@ -186,6 +217,7 @@ function Lane({
     onStartShouldSetPanResponder: () => true,
     onMoveShouldSetPanResponder: (_e, g) => Math.abs(g.dx) > 3,
     onPanResponderGrant: () => {
+      onGestureStart?.();
       onSelect(layer.id);
       bodyStart.current = { tIn: layer.tIn, tOut: layer.tOut };
     },
@@ -218,7 +250,8 @@ function Lane({
             leftPx={(k.t - layer.tIn) * pps}
             pps={pps}
             onTap={() => onTapKeyframe(k.t)}
-            onDragEnd={(to) => onMoveKeyframe(layer.id, k.t, to)}
+            onDragStart={onGestureStart}
+            onDragEnd={(to) => onMoveKeyframe(layer.id, k.t, applySnap(to))}
           />
         ))}
 
@@ -238,12 +271,14 @@ function KeyframeDot({
   leftPx,
   pps,
   onTap,
+  onDragStart,
   onDragEnd,
 }: {
   t: number;
   leftPx: number;
   pps: number;
   onTap: () => void;
+  onDragStart?: () => void;
   onDragEnd: (to: number) => void;
 }) {
   const moved = useRef(false);
@@ -256,6 +291,7 @@ function KeyframeDot({
       moved.current = false;
     },
     onPanResponderMove: () => {
+      if (!moved.current) onDragStart?.();
       moved.current = true;
     },
     onPanResponderRelease: (_e, g) => {
