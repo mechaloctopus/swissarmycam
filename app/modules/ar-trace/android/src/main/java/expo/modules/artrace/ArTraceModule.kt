@@ -1,10 +1,13 @@
 package expo.modules.artrace
 
+import android.graphics.Bitmap
 import com.google.ar.core.ArCoreApk
 import expo.modules.kotlin.Promise
 import expo.modules.kotlin.exception.Exceptions
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
+import java.io.File
+import java.io.FileOutputStream
 
 class ArTraceModule : Module() {
   override fun definition() = ModuleDefinition {
@@ -32,12 +35,31 @@ class ArTraceModule : Module() {
       }
     }
 
+    /**
+     * Writes the printable tracking marker to a PNG the user can share/print.
+     * Same bitmap the AugmentedImageDatabase is built from, so what gets
+     * printed is exactly what the tracker is looking for.
+     */
+    AsyncFunction("exportMarker") { promise: Promise ->
+      try {
+        val context = appContext.reactContext ?: throw Exceptions.ReactContextLost()
+        val file = File(context.cacheDir, "lensii-trace-marker.png")
+        FileOutputStream(file).use { out ->
+          LensiiMarker.bitmap(1600).compress(Bitmap.CompressFormat.PNG, 100, out)
+        }
+        promise.resolve("file://${file.absolutePath}")
+      } catch (e: Exception) {
+        promise.reject("AR_MARKER_EXPORT_FAILED", e.message ?: "Could not write the marker", e)
+      }
+    }
+
     View(ArTraceView::class) {
-      Events("onTrackingStateChange", "onAnchorPlaced", "onArError")
+      Events("onTrackingStateChange", "onAnchorPlaced", "onLockModeChange", "onArError")
 
       Prop("imageUri") { view: ArTraceView, uri: String? -> view.setOverlayImage(uri) }
       Prop("overlayOpacity") { view: ArTraceView, v: Float -> view.overlayOpacity = v }
-      Prop("overlayScale") { view: ArTraceView, v: Float -> view.overlayScale = v }
+      Prop("overlayWidthMeters") { view: ArTraceView, v: Float -> view.overlayWidthMeters = v }
+      Prop("markerWidthMeters") { view: ArTraceView, v: Float -> view.setMarkerWidthMeters(v) }
       Prop("overlayRotation") { view: ArTraceView, v: Float -> view.overlayRotation = v }
       Prop("overlayOffsetX") { view: ArTraceView, v: Float -> view.overlayOffsetX = v }
       Prop("overlayOffsetY") { view: ArTraceView, v: Float -> view.overlayOffsetY = v }

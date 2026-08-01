@@ -8,6 +8,7 @@ type NativeArTraceModule = {
   isAvailable(): boolean;
   checkAvailability(): Promise<string>;
   requestInstall(): Promise<string>;
+  exportMarker(): Promise<string>;
 };
 
 let native: NativeArTraceModule | null = null;
@@ -58,15 +59,41 @@ export async function requestArInstall(): Promise<string> {
   return mod.requestInstall();
 }
 
+/**
+ * Writes the printable tracking marker to a PNG and returns its file:// URI.
+ * Print it at 100% scale, measure the result, and tell the view the true
+ * width — that measurement is what makes AR scale real rather than nominal.
+ */
+export async function exportTraceMarker(): Promise<string> {
+  const mod = getNative();
+  if (!mod) throw new Error("AR Trace is not available on this build");
+  return mod.exportMarker();
+}
+
 export type ArTrackingState = "TRACKING" | "PAUSED" | "STOPPED";
+
+/**
+ * Which lock the overlay is currently riding on, best-first:
+ *  - MARKER: the printed marker is in view and being re-detected every frame.
+ *  - MARKER_COASTING: marker out of frame, riding ARCore's world map.
+ *  - SURFACE: a tap-placed SLAM anchor, no marker involved.
+ *  - NONE: nothing locked yet.
+ */
+export type ArLockMode = "NONE" | "SURFACE" | "MARKER_COASTING" | "MARKER";
 
 export type ArTraceViewProps = {
   style?: StyleProp<ViewStyle>;
   /** file:// URI (or content URI) of the reference image to trace/project. Null clears it. */
   imageUri?: string | null;
   overlayOpacity?: number;
-  /** Multiplier on the traced quad's physical size — does not move or resize the anchor. */
-  overlayScale?: number;
+  /** Real-world width of the projected image, in metres. With a marker lock this is literal. */
+  overlayWidthMeters?: number;
+  /**
+   * True printed width of the physical marker, in metres. This is what pins
+   * world scale — changing it reconfigures the AR session, so drive it from a
+   * discrete control, not a continuous drag.
+   */
+  markerWidthMeters?: number;
   /** Degrees, rotates the overlay around the anchor's surface normal. */
   overlayRotation?: number;
   /** Metres, offsets the overlay from the anchor within the locked surface's plane. */
@@ -85,6 +112,7 @@ export type ArTraceViewProps = {
   paused?: boolean;
   onTrackingStateChange?: (e: { nativeEvent: { state: ArTrackingState } }) => void;
   onAnchorPlaced?: (e: { nativeEvent: { success: boolean } }) => void;
+  onLockModeChange?: (e: { nativeEvent: { mode: ArLockMode } }) => void;
   onArError?: (e: { nativeEvent: { message: string } }) => void;
 };
 

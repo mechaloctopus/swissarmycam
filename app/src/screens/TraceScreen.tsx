@@ -2,18 +2,34 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { View, Text, StyleSheet, Pressable, PanResponder, LayoutChangeEvent, ActivityIndicator } from "react-native";
 import { C, F } from "../theme";
 import { Label, Mono } from "../components/ui";
-import { Slider, Toggle, Row } from "../components/controls";
-import { pickImageFromLibrary } from "../media";
-import { ArTraceView, isArTraceAvailable, checkArAvailability, requestArInstall, ArAvailability, ArTrackingState } from "ar-trace";
+import { Slider, Toggle, Row, Stepper } from "../components/controls";
+import { pickImageFromLibrary, shareFile } from "../media";
+import {
+  ArTraceView, isArTraceAvailable, checkArAvailability, requestArInstall, exportTraceMarker,
+  ArAvailability, ArTrackingState, ArLockMode,
+} from "ar-trace";
 
 const PAN_METERS_PER_PX = 0.0018;
 
+const LOCK_COPY: Record<ArLockMode, { text: string; good: boolean }> = {
+  MARKER: { text: "MARKER LOCK", good: true },
+  MARKER_COASTING: { text: "MARKER · COASTING", good: false },
+  SURFACE: { text: "SURFACE LOCK", good: true },
+  NONE: { text: "NO LOCK", good: false },
+};
+
 /**
- * Surface-locked AR trace/mural: tap a real-world surface to drop an ARCore
- * anchor, import a reference image, and it renders projected onto that
- * surface — locked by ARCore's own SLAM tracking, not by app-side math, so
- * it doesn't drift as you move the phone. Camera zoom only magnifies the
- * rendered pixels for detail work; it never touches the anchor.
+ * Surface-locked AR trace/mural. Two ways to lock, best-available wins:
+ *
+ * A printed **marker** taped to the paper or wall is the strong one — ARCore
+ * re-detects it as an AugmentedImage every frame it's in view, so the overlay
+ * re-localizes against a physical object instead of dead-reckoning, and the
+ * marker's known printed width is what makes "200 mm wide" mean 200 real
+ * millimetres. Tap-to-place **surface** anchors still work with no marker at
+ * all, they just have nothing to correct against once you walk away.
+ *
+ * Camera zoom only magnifies rendered pixels for detail work; it never
+ * touches the anchor.
  */
 export default function TraceScreen({ focused }: { focused: boolean }) {
   const available = isArTraceAvailable();
@@ -23,12 +39,15 @@ export default function TraceScreen({ focused }: { focused: boolean }) {
 
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [opacity, setOpacity] = useState(85);
-  const [scale, setScale] = useState(100);
+  const [widthMm, setWidthMm] = useState(210); // A4 width — a sane default to trace at
+  const [markerMm, setMarkerMm] = useState(100);
   const [rotation, setRotation] = useState(0);
   const [zoom, setZoom] = useState(100);
   const [offsetX, setOffsetX] = useState(0);
   const [offsetY, setOffsetY] = useState(0);
   const [locked, setLocked] = useState(false);
+  const [sharingMarker, setSharingMarker] = useState(false);
+  const [lockMode, setLockMode] = useState<ArLockMode>("NONE");
 
   const [anchorPlaced, setAnchorPlaced] = useState(false);
   const [placeAt, setPlaceAt] = useState({ x: 0.5, y: 0.5 });
@@ -88,9 +107,9 @@ export default function TraceScreen({ focused }: { focused: boolean }) {
 
   const doReset = () => {
     setAnchorPlaced(false);
+    setLockMode("NONE");
     setOffsetX(0);
     setOffsetY(0);
-    setScale(100);
     setRotation(0);
     setArError(null);
     setResetTrigger((t) => t + 1);
@@ -99,6 +118,17 @@ export default function TraceScreen({ focused }: { focused: boolean }) {
   const doImport = async () => {
     const uri = await pickImageFromLibrary();
     if (uri) setImageUri(uri);
+  };
+
+  const doShareMarker = async () => {
+    setSharingMarker(true);
+    try {
+      const uri = await exportTraceMarker();
+      await shareFile(uri);
+    } catch (e) {
+      setArError(e instanceof Error ? e.message : "Could not export the marker");
+    }
+    setSharingMarker(false);
   };
 
   const doInstall = async () => {
@@ -165,7 +195,8 @@ export default function TraceScreen({ focused }: { focused: boolean }) {
             style={StyleSheet.absoluteFill}
             imageUri={imageUri}
             overlayOpacity={opacity / 100}
-            overlayScale={scale / 100}
+            overlayWidthMeters={widthMm / 1000}
+            markerWidthMeters={markerMm / 1000}
             overlayRotation={rotation}
             overlayOffsetX={offsetX}
             overlayOffsetY={offsetY}
@@ -176,9 +207,11 @@ export default function TraceScreen({ focused }: { focused: boolean }) {
             resetTrigger={resetTrigger}
             paused={!focused}
             onTrackingStateChange={(e) => setTrackingState(e.nativeEvent.state)}
+            onLockModeChange={(e) => setLockMode(e.nativeEvent.mode)}
             onAnchorPlaced={(e) => {
               setAnchorPlaced(e.nativeEvent.success);
-              if (!e.nativeEvent.success) setArError("Couldn't lock onto a surface there — try a well-lit, textured spot, closer up.");
+              if (e.nativeEvent.success) setArError(null);
+              else setArError("Couldn't lock onto a surface there — try a well-lit, textured spot, closer up.");
             }}
             onArError={(e) => setArError(e.nativeEvent.message)}
           />
@@ -189,15 +222,23 @@ export default function TraceScreen({ focused }: { focused: boolean }) {
             <Mono color={trackingState === "TRACKING" ? C.go : C.inkMute} size={11}>{trackingState ?? "STARTING"}</Mono>
           </View>
           <View style={styles.recPill}>
-            <Mono color={anchorPlaced ? C.go : C.inkMute} size={11}>
-              {anchorPlaced ? (locked ? "LOCKED" : "SURFACE LOCKED") : "TAP TO LOCK SURFACE"}
+            <Mono color={LOCK_COPY[lockMode].good ? C.go : C.inkMute} size={11}>
+              {lockMode === "NONE" ? "SHOW MARKER OR TAP A SURFACE" : LOCK_COPY[lockMode].text}
             </Mono>
           </View>
         </View>
 
+        {lockMode === "MARKER_COASTING" && (
+          <View pointerEvents="none" style={[styles.hint, { bottom: undefined, top: 56 }]}>
+            <Mono color={C.inkSoft} size={11}>
+              Marker out of frame — riding ARCore's world map. Bring it back into view to re-lock.
+            </Mono>
+          </View>
+        )}
+
         {!imageUri && (
           <View pointerEvents="none" style={styles.hint}>
-            <Mono color={C.inkSoft} size={12}>Import a reference image below, then tap a surface to lock onto it</Mono>
+            <Mono color={C.inkSoft} size={12}>Import a reference image below, then show the marker or tap a surface</Mono>
           </View>
         )}
       </View>
@@ -218,8 +259,8 @@ export default function TraceScreen({ focused }: { focused: boolean }) {
         <Row title="Opacity">
           <Slider value={opacity} min={10} max={100} step={5} onChange={setOpacity} width={150} />
         </Row>
-        <Row title="Size">
-          <Slider value={scale} min={30} max={400} step={5} onChange={setScale} width={150} />
+        <Row title="Width" hint={`${widthMm} mm across — real millimetres once a marker is locked`}>
+          <Slider value={widthMm} min={20} max={2000} step={10} onChange={setWidthMm} width={150} />
         </Row>
         <Row title="Rotation">
           <Slider value={rotation} min={-180} max={180} step={5} onChange={setRotation} width={150} />
@@ -228,12 +269,30 @@ export default function TraceScreen({ focused }: { focused: boolean }) {
           <Slider value={zoom} min={100} max={400} step={10} onChange={setZoom} width={150} />
         </Row>
 
+        <View style={styles.markerBox}>
+          <Mono color={C.inkSoft} size={11}>Marker lock — the accurate way</Mono>
+          <Text style={styles.footnote}>
+            Print the marker, tape it to your paper or wall, and keep it in shot. The camera
+            re-finds it every frame, so the image stays planted instead of slowly sliding, and its
+            printed width is what makes the size below real. Print at 100% scale, then measure the
+            square you actually got and enter it here — that measurement is the scale reference.
+          </Text>
+          <View style={styles.row}>
+            <Pressable onPress={doShareMarker} disabled={sharingMarker} style={[styles.smallBtn, sharingMarker && { opacity: 0.6 }]}>
+              <Mono color="#fff" size={11}>{sharingMarker ? "Exporting…" : "Print / share marker"}</Mono>
+            </Pressable>
+            <View style={{ flex: 1 }} />
+            <Mono color={C.inkMute} size={11} style={{ marginRight: 8 }}>Printed size</Mono>
+            <Stepper value={markerMm} min={20} max={400} step={5} suffix=" mm" onChange={setMarkerMm} />
+          </View>
+        </View>
+
         <Text style={styles.footnote}>
           Zoom magnifies the view for detail work — it never moves or resizes the lock itself. Drag
-          on the viewfinder to nudge the image within the locked surface. The lock comes from
-          ARCore's own tracking, not this screen — hold steady over a textured, well-lit surface
-          for the best result; this is real device-tracked AR and hasn't been verified beyond
-          compiling (see Settings → Capability map).
+          on the viewfinder to nudge the image within the lock. Both lock modes are ARCore's own
+          tracking, not app-side math: a marker lock re-localizes against a real object every frame,
+          a surface lock has nothing to correct against once the spot leaves view. This is real
+          device-tracked AR and hasn't been verified beyond compiling (see Settings → Capability map).
         </Text>
 
         {arError && (
@@ -262,5 +321,6 @@ const styles = StyleSheet.create({
   smallBtn: { backgroundColor: C.red, borderRadius: 40, paddingHorizontal: 12, paddingVertical: 8 },
   smallBtnGhost: { backgroundColor: C.surface, borderWidth: 1, borderColor: C.lineStrong, marginLeft: 8 },
   footnote: { color: C.inkFaint, fontSize: 11.5, lineHeight: 17, marginTop: 10 },
+  markerBox: { marginTop: 14, backgroundColor: C.surface, borderWidth: 1, borderColor: C.line, borderRadius: 10, padding: 12 },
   errBox: { marginTop: 10, backgroundColor: C.surface, borderWidth: 1, borderColor: C.line, borderLeftWidth: 3, borderLeftColor: C.red, borderRadius: 8, padding: 10 },
 });

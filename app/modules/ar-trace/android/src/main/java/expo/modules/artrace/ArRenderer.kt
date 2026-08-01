@@ -8,10 +8,13 @@ import android.opengl.GLUtils
 import android.opengl.Matrix
 import android.view.Surface
 import com.google.ar.core.Anchor
+import com.google.ar.core.AugmentedImage
 import com.google.ar.core.Camera
 import com.google.ar.core.Coordinates2d
+import com.google.ar.core.Frame
 import com.google.ar.core.Plane
 import com.google.ar.core.Point
+import com.google.ar.core.Pose
 import com.google.ar.core.Session
 import com.google.ar.core.TrackingState
 import com.google.ar.core.exceptions.CameraNotAvailableException
@@ -24,7 +27,12 @@ import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
 
 private const val FLOAT_SIZE = 4
-private const val BASE_HALF_EXTENT = 0.2f // metres — traced quad half-size at overlayScale = 1
+
+/** Lock quality, best-first. Reported to JS so the HUD can be honest about it. */
+const val LOCK_NONE = "NONE"
+const val LOCK_SURFACE = "SURFACE"
+const val LOCK_MARKER_COASTING = "MARKER_COASTING"
+const val LOCK_MARKER = "MARKER"
 
 // Full-screen quad in NDC, triangle-strip order BL, BR, TL, TR — also the
 // exact input format ARCore's Frame.transformCoordinates2d expects.
@@ -114,6 +122,7 @@ private fun createProgram(vertexSrc: String, fragmentSrc: String): Int {
 class ArRenderer(
   private val onTrackingState: (String) -> Unit,
   private val onAnchorResult: (Boolean) -> Unit,
+  private val onLockMode: (String) -> Unit,
   private val onError: (String) -> Unit,
 ) : GLSurfaceView.Renderer {
 
@@ -121,7 +130,11 @@ class ArRenderer(
 
   @Volatile private var currentSession: Session? = null
   private var anchor: Anchor? = null
+  private var markerAnchor: Anchor? = null
+  /** Stable reference — ARCore mutates the trackable in place each frame. */
+  private var markerImage: AugmentedImage? = null
   private var lastReportedState: TrackingState? = null
+  private var lastLockMode = LOCK_NONE
   private var geometrySet = false
 
   private var viewportWidth = 1
@@ -146,14 +159,10 @@ class ArRenderer(
   private val cameraTexCoords = FloatArray(8).also { OVERLAY_TEX_COORDS.copyInto(it) }
   private val cameraTexCoordBuffer = toFloatBuffer(cameraTexCoords)
   private val overlayTexCoordBuffer = toFloatBuffer(OVERLAY_TEX_COORDS)
-  private var overlayPositionBuffer: FloatBuffer = toFloatBuffer(
-    floatArrayOf(
-      -BASE_HALF_EXTENT, 0f, -BASE_HALF_EXTENT,
-      BASE_HALF_EXTENT, 0f, -BASE_HALF_EXTENT,
-      -BASE_HALF_EXTENT, 0f, BASE_HALF_EXTENT,
-      BASE_HALF_EXTENT, 0f, BASE_HALF_EXTENT
-    )
-  )
+  private var overlayPositionBuffer: FloatBuffer = toFloatBuffer(FloatArray(12))
+  /** Image aspect (w/h); the quad is sized in real metres from this + overlayWidthMeters. */
+  private var overlayAspect = 1f
+  private var builtForWidth = -1f
 
   private val pendingTap = AtomicReference<FloatArray?>(null)
   private val bitmapDirty = AtomicBoolean(false)
@@ -165,7 +174,11 @@ class ArRenderer(
     currentSession = session
     anchor?.detach()
     anchor = null
+    markerAnchor?.detach()
+    markerAnchor = null
+    markerImage = null
     lastReportedState = null
+    lastLockMode = LOCK_NONE
     geometrySet = false
     if (session != null && viewportWidth > 1) {
       session.setDisplayGeometry(Surface.ROTATION_0, viewportWidth, viewportHeight)
@@ -266,7 +279,12 @@ class ArRenderer(
     if (resetRequested.compareAndSet(true, false)) {
       anchor?.detach()
       anchor = null
+      markerAnchor?.detach()
+      markerAnchor = null
+      markerImage = null
     }
+
+    updateMarker(frame)
 
     pendingTap.getAndSet(null)?.let { tap ->
       if (trackingState == TrackingState.TRACKING) {
@@ -290,12 +308,69 @@ class ArRenderer(
       }
     }
 
+    // The marker always wins when it's available: it re-localizes against a
+    // physical object every frame, so it can't accumulate drift the way a
+    // pure SLAM anchor can. The tap-placed anchor is the fallback.
+    //
+    // While the marker is actually in shot, its centerPose is the freshest
+    // estimate there is — fresher than the anchor, which is ARCore's
+    // world-registered smoothing of the same observation. Out of shot, the
+    // anchor is all that's left, and it's exactly the right thing to fall
+    // back to since ARCore keeps correcting it against the world map.
+    val liveMarker = markerImage?.takeIf {
+      it.trackingState == TrackingState.TRACKING && it.trackingMethod == AugmentedImage.TrackingMethod.FULL_TRACKING
+    }
+    val markerFallback = markerAnchor?.takeIf { it.trackingState == TrackingState.TRACKING }
+    val surface = anchor?.takeIf { it.trackingState == TrackingState.TRACKING }
+
+    val pose: Pose? = liveMarker?.centerPose ?: markerFallback?.pose ?: surface?.pose
+
+    val lockMode = when {
+      liveMarker != null -> LOCK_MARKER
+      markerFallback != null -> LOCK_MARKER_COASTING
+      surface != null -> LOCK_SURFACE
+      else -> LOCK_NONE
+    }
+    if (lockMode != lastLockMode) {
+      lastLockMode = lockMode
+      onLockMode(lockMode)
+    }
+
     if (trackingState != TrackingState.TRACKING) return
-    val currentAnchor = anchor ?: return
-    if (currentAnchor.trackingState != TrackingState.TRACKING) return
+    if (pose == null) return
     if (overlayTextureId == 0) return
 
-    drawOverlay(camera, currentAnchor)
+    drawOverlay(camera, pose)
+  }
+
+  /**
+   * Picks up the printed Lensii marker. ARCore reports it as an AugmentedImage
+   * trackable; anchoring to the trackable (rather than to a world pose) means
+   * ARCore keeps correcting the anchor every time it sees the marker again.
+   *
+   * trackingMethod distinguishes "I can see it right now" (FULL_TRACKING) from
+   * "it's out of frame, I'm going on my world map" (LAST_KNOWN_POSE) — the
+   * HUD surfaces that difference rather than pretending both are equally good.
+   */
+  private fun updateMarker(frame: Frame) {
+    for (img in frame.getUpdatedTrackables(AugmentedImage::class.java)) {
+      if (img.name != LensiiMarker.NAME) continue
+      when (img.trackingState) {
+        TrackingState.TRACKING -> {
+          if (markerAnchor == null) {
+            markerAnchor = img.createAnchor(img.centerPose)
+            onAnchorResult(true)
+          }
+          markerImage = img
+        }
+        TrackingState.STOPPED -> {
+          markerAnchor?.detach()
+          markerAnchor = null
+          markerImage = null
+        }
+        else -> Unit
+      }
+    }
   }
 
   private fun uploadOverlayTexture(bmp: Bitmap?) {
@@ -316,9 +391,20 @@ class ArRenderer(
     GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
     GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, bmp, 0)
 
-    val aspect = bmp.width.toFloat() / bmp.height.toFloat()
-    val halfW = if (aspect >= 1f) BASE_HALF_EXTENT * aspect else BASE_HALF_EXTENT
-    val halfH = if (aspect >= 1f) BASE_HALF_EXTENT else BASE_HALF_EXTENT / aspect
+    overlayAspect = if (bmp.height > 0) bmp.width.toFloat() / bmp.height.toFloat() else 1f
+    builtForWidth = -1f
+    lastBitmap = bmp
+  }
+
+  /**
+   * Sizes the quad in real metres. With a marker lock this is literally true —
+   * a 0.21 m width prints across an A4 sheet — because the marker's known
+   * physical size is what fixes ARCore's world scale.
+   */
+  private fun ensureQuad(widthMeters: Float) {
+    if (widthMeters == builtForWidth) return
+    val halfW = widthMeters / 2f
+    val halfH = halfW / overlayAspect
     overlayPositionBuffer = toFloatBuffer(
       floatArrayOf(
         -halfW, 0f, -halfH,
@@ -327,7 +413,7 @@ class ArRenderer(
         halfW, 0f, halfH
       )
     )
-    lastBitmap = bmp
+    builtForWidth = widthMeters
   }
 
   private fun drawCameraBackground() {
@@ -355,7 +441,9 @@ class ArRenderer(
     GLES20.glDisableVertexAttribArray(bgTexCoordAttrib)
   }
 
-  private fun drawOverlay(camera: Camera, anchor: Anchor) {
+  private fun drawOverlay(camera: Camera, pose: Pose) {
+    ensureQuad(view.overlayWidthMeters.coerceIn(0.01f, 20f))
+
     GLES20.glEnable(GLES20.GL_BLEND)
     GLES20.glBlendFunc(GLES20.GL_SRC_ALPHA, GLES20.GL_ONE_MINUS_SRC_ALPHA)
     GLES20.glDepthMask(false)
@@ -366,10 +454,9 @@ class ArRenderer(
     camera.getProjectionMatrix(projMatrix, 0, 0.05f, 100f)
 
     val modelMatrix = FloatArray(16)
-    anchor.pose.toMatrix(modelMatrix, 0)
+    pose.toMatrix(modelMatrix, 0)
     Matrix.translateM(modelMatrix, 0, view.overlayOffsetX, 0f, view.overlayOffsetY)
     Matrix.rotateM(modelMatrix, 0, view.overlayRotation, 0f, 1f, 0f)
-    Matrix.scaleM(modelMatrix, 0, view.overlayScale, 1f, view.overlayScale)
 
     val vpMatrix = FloatArray(16)
     Matrix.multiplyMM(vpMatrix, 0, projMatrix, 0, viewMatrix, 0)

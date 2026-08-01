@@ -7,6 +7,7 @@ import android.net.Uri
 import android.opengl.GLSurfaceView
 import android.view.ViewGroup
 import com.google.ar.core.ArCoreApk
+import com.google.ar.core.AugmentedImageDatabase
 import com.google.ar.core.Config
 import com.google.ar.core.Session
 import com.google.ar.core.exceptions.CameraNotAvailableException
@@ -17,21 +18,31 @@ import expo.modules.kotlin.views.ExpoView
 
 /**
  * Hosts a GLSurfaceView that renders the ARCore camera feed plus a
- * surface-anchored overlay image. The anchor is world-tracked by ARCore's
- * SLAM pipeline, not by app code — "locked, not drifting" is ARCore doing
- * its job, this view just draws relative to whatever pose it reports each
- * frame. `cameraZoom` only crops/magnifies the rendered pixels; it never
- * touches the anchor or the tracked pose.
+ * surface-anchored overlay image.
+ *
+ * Two lock sources, best-available wins:
+ *  - **Marker** — a printed Lensii marker registered as an ARCore
+ *    AugmentedImage. Because it re-detects a physical object, it re-localizes
+ *    every frame it's in view instead of dead-reckoning, and its known printed
+ *    width is what pins world scale to real millimetres.
+ *  - **Surface** — the original tap-to-place SLAM anchor, for when there's
+ *    nothing to tape a marker to.
+ *
+ * Either way the pose comes from ARCore, not from app-side math; this view
+ * just draws relative to whatever it reports. `cameraZoom` only crops the
+ * rendered pixels — it never touches the anchor.
  */
 class ArTraceView(context: Context, appContext: AppContext) : ExpoView(context, appContext) {
   val onTrackingStateChange by EventDispatcher()
   val onAnchorPlaced by EventDispatcher()
+  val onLockModeChange by EventDispatcher()
   val onArError by EventDispatcher()
 
   private val glSurfaceView: GLSurfaceView = GLSurfaceView(context)
   private val renderer: ArRenderer = ArRenderer(
     onTrackingState = { state -> post { onTrackingStateChange(mapOf("state" to state)) } },
     onAnchorResult = { success -> post { onAnchorPlaced(mapOf("success" to success)) } },
+    onLockMode = { mode -> post { onLockModeChange(mapOf("mode" to mode)) } },
     onError = { msg -> post { onArError(mapOf("message" to msg)) } },
   )
 
@@ -39,7 +50,7 @@ class ArTraceView(context: Context, appContext: AppContext) : ExpoView(context, 
   private var paused = false
 
   @Volatile var overlayOpacity: Float = 0.85f
-  @Volatile var overlayScale: Float = 1f
+  @Volatile var overlayWidthMeters: Float = 0.21f
   @Volatile var overlayRotation: Float = 0f
   @Volatile var overlayOffsetX: Float = 0f
   @Volatile var overlayOffsetY: Float = 0f
@@ -47,6 +58,9 @@ class ArTraceView(context: Context, appContext: AppContext) : ExpoView(context, 
     set(v) { field = v.coerceIn(1f, 5f) }
   @Volatile var pendingTapX: Float = 0.5f
   @Volatile var pendingTapY: Float = 0.5f
+
+  /** Printed width of the physical marker, in metres. Wrong value = wrong scale. */
+  private var markerWidthMeters: Float = 0.1f
 
   init {
     renderer.view = this
@@ -76,11 +90,7 @@ class ArTraceView(context: Context, appContext: AppContext) : ExpoView(context, 
         return
       }
       val newSession = Session(context)
-      val config = Config(newSession)
-      config.planeFindingMode = Config.PlaneFindingMode.HORIZONTAL_AND_VERTICAL
-      config.updateMode = Config.UpdateMode.LATEST_CAMERA_IMAGE
-      config.focusMode = Config.FocusMode.AUTO
-      newSession.configure(config)
+      newSession.configure(buildConfig(newSession))
       session = newSession
       renderer.attachSession(newSession)
       if (!paused) {
@@ -91,6 +101,39 @@ class ArTraceView(context: Context, appContext: AppContext) : ExpoView(context, 
       onArError(mapOf("message" to (e.message ?: "ARCore is unavailable")))
     } catch (e: Exception) {
       onArError(mapOf("message" to (e.message ?: "Could not start the AR session")))
+    }
+  }
+
+  /**
+   * Registering the marker with its true printed width is what gives the
+   * session real metric scale — it's also why changing that width has to
+   * reconfigure the session rather than just scaling a matrix.
+   */
+  private fun buildConfig(target: Session): Config {
+    val config = Config(target)
+    config.planeFindingMode = Config.PlaneFindingMode.HORIZONTAL_AND_VERTICAL
+    config.updateMode = Config.UpdateMode.LATEST_CAMERA_IMAGE
+    config.focusMode = Config.FocusMode.AUTO
+    try {
+      val db = AugmentedImageDatabase(target)
+      db.addImage(LensiiMarker.NAME, LensiiMarker.bitmap(), markerWidthMeters)
+      config.augmentedImageDatabase = db
+    } catch (e: Exception) {
+      // Tracing still works off the tap-placed surface anchor without it.
+      onArError(mapOf("message" to "Marker tracking unavailable: ${e.message ?: "database error"}"))
+    }
+    return config
+  }
+
+  fun setMarkerWidthMeters(v: Float) {
+    val next = v.coerceIn(0.02f, 2f)
+    if (next == markerWidthMeters) return
+    markerWidthMeters = next
+    val s = session ?: return
+    try {
+      s.configure(buildConfig(s))
+    } catch (e: Exception) {
+      onArError(mapOf("message" to (e.message ?: "Could not update marker size")))
     }
   }
 

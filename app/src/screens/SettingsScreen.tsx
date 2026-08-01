@@ -33,6 +33,7 @@ const CAPS: { name: string; level: string; tone: string }[] = [
   { name: "Claymation onion-skin capture + MP4 bake", level: "Possible now", tone: C.go },
   { name: "Cloud 3D reconstruction — video → Gaussian Splat (KIRI Engine)", level: "Possible now", tone: C.go },
   { name: "AR surface-locked trace / mural projection (ARCore)", level: "Possible now", tone: C.go },
+  { name: "Printed-marker trace lock + true millimetre scale", level: "Possible now", tone: C.go },
   { name: "In-app purchases (Google Play Billing)", level: "Possible now", tone: C.go },
   { name: "Traversable 3D splat viewer — orbit / pan / zoom", level: "Possible now", tone: C.go },
   { name: "AR measurement overlay on a finished scan", level: "Not built yet", tone: C.native },
