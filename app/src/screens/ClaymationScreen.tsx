@@ -37,6 +37,11 @@ export default function ClaymationScreen({ focused }: { focused: boolean }) {
   const [frames, setFrames] = useState<string[]>([]);
   const [onionSkin, setOnionSkin] = useState(true);
   const [onionOpacity, setOnionOpacity] = useState(35);
+  /** How many previous frames to ghost. Animators judge spacing off more than one. */
+  const [onionDepth, setOnionDepth] = useState(1);
+  const [reviewing, setReviewing] = useState(false);
+  const [reviewIdx, setReviewIdx] = useState(0);
+  const [playing, setPlaying] = useState(false);
   const [sessions, setSessions] = useState<ClaySession[]>([]);
   const [busy, setBusy] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -53,6 +58,15 @@ export default function ClaymationScreen({ focused }: { focused: boolean }) {
   useEffect(() => {
     if (focused && !shooting) loadSessions();
   }, [focused, shooting, loadSessions]);
+
+  useEffect(() => {
+    if (!playing || !reviewing || frames.length === 0) return;
+    const id = setInterval(
+      () => setReviewIdx((i) => (i + 1) % frames.length),
+      Math.max(1, Math.round(1000 / fps)),
+    );
+    return () => clearInterval(id);
+  }, [playing, reviewing, frames.length, fps]);
 
   const flash = (m: string) => {
     setToast(m);
@@ -121,30 +135,99 @@ export default function ClaymationScreen({ focused }: { focused: boolean }) {
     }
   };
 
-  const onionUri = frames.length > 0 ? frames[frames.length - 1] : null;
+  // Ghost the last `onionDepth` frames, most recent strongest. Opacity falls
+  // off with age so the stack reads as motion rather than mud.
+  const onionStack = frames.slice(Math.max(0, frames.length - onionDepth));
+
+  // In review you're sitting *between* frames, so there is a frame after as
+  // well as before — the pair is what tells you if the spacing is even.
+  const reviewPrev = reviewing && reviewIdx > 0 ? frames[reviewIdx - 1] : null;
+  const reviewNext = reviewing && reviewIdx < frames.length - 1 ? frames[reviewIdx + 1] : null;
+  const reviewCur = reviewing ? frames[reviewIdx] ?? null : null;
+
+  const openReview = () => {
+    if (frames.length === 0) return;
+    setReviewIdx(frames.length - 1);
+    setReviewing(true);
+  };
+
+  const closeReview = () => {
+    setReviewing(false);
+    setPlaying(false);
+  };
+
+  const deleteReviewFrame = async () => {
+    const uri = frames[reviewIdx];
+    if (!uri || !sessionRef.current) return;
+    await deleteClayFrame(sessionRef.current, uri);
+    const next = frames.filter((f) => f !== uri);
+    setFrames(next);
+    if (next.length === 0) closeReview();
+    else setReviewIdx((i) => Math.min(i, next.length - 1));
+  };
 
   if (shooting) {
     return (
       <View style={styles.root}>
         <View style={styles.viewport}>
           <CameraView ref={camRef} style={StyleSheet.absoluteFill} facing="back" active={focused} onCameraReady={() => setReady(true)} />
-          {onionSkin && onionUri && (
-            <Image source={{ uri: onionUri }} style={[StyleSheet.absoluteFill, { opacity: onionOpacity / 100 }]} resizeMode="cover" />
+          {!reviewing &&
+            onionSkin &&
+            onionStack.map((uri, i) => {
+              const age = onionStack.length - i; // 1 = the frame you just shot
+              return (
+                <Image
+                  key={uri}
+                  source={{ uri }}
+                  style={[StyleSheet.absoluteFill, { opacity: onionOpacity / 100 / age }]}
+                  resizeMode="cover"
+                />
+              );
+            })}
+
+          {reviewing && (
+            <>
+              {reviewCur && <Image source={{ uri: reviewCur }} style={StyleSheet.absoluteFill} resizeMode="cover" />}
+              {!playing && reviewPrev && (
+                <Image source={{ uri: reviewPrev }} style={[StyleSheet.absoluteFill, { opacity: 0.35 }]} resizeMode="cover" />
+              )}
+              {!playing && reviewNext && (
+                <Image source={{ uri: reviewNext }} style={[StyleSheet.absoluteFill, { opacity: 0.22 }]} resizeMode="cover" />
+              )}
+            </>
           )}
+
           <View style={styles.hud}>
             <View style={styles.recPill}>
-              <Mono color={C.ink} size={11}>{frames.length} FRAMES</Mono>
+              <Mono color={C.ink} size={11}>
+                {reviewing ? `${reviewIdx + 1} / ${frames.length}` : `${frames.length} FRAMES`}
+              </Mono>
             </View>
-            <Pressable onPress={() => setOnionSkin((v) => !v)} style={styles.recPill}>
-              <Mono color={onionSkin ? C.red : C.inkMute} size={11}>{onionSkin ? "ONION ON" : "ONION OFF"}</Mono>
-            </Pressable>
+            {reviewing ? (
+              <View style={styles.recPill}>
+                <Mono color={C.inkMute} size={11}>
+                  {playing ? "PLAYING" : reviewPrev || reviewNext ? "GHOSTS: BEFORE + AFTER" : "ONLY FRAME"}
+                </Mono>
+              </View>
+            ) : (
+              <Pressable onPress={() => setOnionSkin((v) => !v)} style={styles.recPill}>
+                <Mono color={onionSkin ? C.red : C.inkMute} size={11}>{onionSkin ? "ONION ON" : "ONION OFF"}</Mono>
+              </Pressable>
+            )}
           </View>
         </View>
 
-        {onionSkin && (
+        {onionSkin && !reviewing && (
           <View style={styles.onionSliderWrap}>
-            <Mono color={C.inkMute} size={10}>Onion opacity</Mono>
-            <Slider value={onionOpacity} min={10} max={70} step={5} onChange={setOnionOpacity} width={160} />
+            <Mono color={C.inkMute} size={10}>Onion</Mono>
+            <Slider value={onionOpacity} min={10} max={70} step={5} onChange={setOnionOpacity} width={110} />
+            <View style={{ flexDirection: "row", gap: 5 }}>
+              {[1, 2, 3].map((d) => (
+                <Pressable key={d} onPress={() => setOnionDepth(d)} style={[styles.depthChip, onionDepth === d && styles.depthChipOn]}>
+                  <Mono color={onionDepth === d ? "#fff" : C.inkSoft} size={10}>−{d}</Mono>
+                </Pressable>
+              ))}
+            </View>
           </View>
         )}
 
@@ -155,28 +238,63 @@ export default function ClaymationScreen({ focused }: { focused: boolean }) {
             keyExtractor={(f) => f}
             style={styles.thumbStrip}
             contentContainerStyle={{ gap: 8, paddingHorizontal: 16 }}
-            renderItem={({ item }) => <Image source={{ uri: item }} style={styles.thumb} />}
+            renderItem={({ item, index }) => (
+              <Pressable onPress={() => { setPlaying(false); setReviewIdx(index); setReviewing(true); }}>
+                <Image
+                  source={{ uri: item }}
+                  style={[styles.thumb, reviewing && index === reviewIdx && styles.thumbOn]}
+                />
+              </Pressable>
+            )}
           />
         )}
 
         <View style={styles.panel}>
-          <View style={styles.shootRow}>
-            <Pressable onPress={undoLast} disabled={frames.length === 0} style={[styles.undoBtn, frames.length === 0 && { opacity: 0.4 }]}>
-              <Text style={styles.undoText}>↺</Text>
-            </Pressable>
-            <Pressable onPress={capture} disabled={!ready || busy} style={[styles.shutter, (!ready || busy) && { opacity: 0.5 }]}>
-              <View style={styles.shutterInner} />
-            </Pressable>
-            <View style={{ width: 52 }} />
-          </View>
-          <View style={styles.finishRow}>
-            <Pressable onPress={discardShoot} style={styles.discardBtn}>
-              <Text style={styles.discardText}>Discard</Text>
-            </Pressable>
-            <Pressable onPress={finishShoot} disabled={frames.length === 0} style={[styles.finishBtn, frames.length === 0 && { opacity: 0.5 }]}>
-              <Text style={styles.finishText}>Finish ({frames.length})</Text>
-            </Pressable>
-          </View>
+          {reviewing ? (
+            <>
+              <View style={styles.shootRow}>
+                <Pressable onPress={() => { setPlaying(false); setReviewIdx((i) => Math.max(0, i - 1)); }} disabled={reviewIdx === 0} style={[styles.undoBtn, reviewIdx === 0 && { opacity: 0.4 }]}>
+                  <Text style={styles.undoText}>‹</Text>
+                </Pressable>
+                <Pressable onPress={() => setPlaying((p) => !p)} style={styles.shutter}>
+                  <Text style={styles.playGlyph}>{playing ? "❚❚" : "▶"}</Text>
+                </Pressable>
+                <Pressable onPress={() => { setPlaying(false); setReviewIdx((i) => Math.min(frames.length - 1, i + 1)); }} disabled={reviewIdx >= frames.length - 1} style={[styles.undoBtn, reviewIdx >= frames.length - 1 && { opacity: 0.4 }]}>
+                  <Text style={styles.undoText}>›</Text>
+                </Pressable>
+              </View>
+              <View style={styles.finishRow}>
+                <Pressable onPress={deleteReviewFrame} style={styles.discardBtn}>
+                  <Text style={[styles.discardText, { color: C.red }]}>Delete frame</Text>
+                </Pressable>
+                <Pressable onPress={closeReview} style={styles.finishBtn}>
+                  <Text style={styles.finishText}>Back to shooting</Text>
+                </Pressable>
+              </View>
+            </>
+          ) : (
+            <>
+              <View style={styles.shootRow}>
+                <Pressable onPress={undoLast} disabled={frames.length === 0} style={[styles.undoBtn, frames.length === 0 && { opacity: 0.4 }]}>
+                  <Text style={styles.undoText}>↺</Text>
+                </Pressable>
+                <Pressable onPress={capture} disabled={!ready || busy} style={[styles.shutter, (!ready || busy) && { opacity: 0.5 }]}>
+                  <View style={styles.shutterInner} />
+                </Pressable>
+                <Pressable onPress={openReview} disabled={frames.length === 0} style={[styles.undoBtn, frames.length === 0 && { opacity: 0.4 }]}>
+                  <Text style={styles.undoText}>▶</Text>
+                </Pressable>
+              </View>
+              <View style={styles.finishRow}>
+                <Pressable onPress={discardShoot} style={styles.discardBtn}>
+                  <Text style={styles.discardText}>Discard</Text>
+                </Pressable>
+                <Pressable onPress={finishShoot} disabled={frames.length === 0} style={[styles.finishBtn, frames.length === 0 && { opacity: 0.5 }]}>
+                  <Text style={styles.finishText}>Finish ({frames.length})</Text>
+                </Pressable>
+              </View>
+            </>
+          )}
         </View>
 
         {toast && (
@@ -193,9 +311,11 @@ export default function ClaymationScreen({ focused }: { focused: boolean }) {
       <Label>§ Clay · Stop-motion studio</Label>
       <Text style={styles.title}>Claymation</Text>
       <Text style={styles.body}>
-        Shoot one frame at a time — the last frame you captured shows semi-transparent over the
-        live view (onion skin) so you can see exactly how far to move the subject before the next
-        shot. When you're done, bake the set into a real MP4 at your chosen frame rate.
+        Shoot one frame at a time — the frames you've already captured show semi-transparent over
+        the live view (onion skin, up to three deep) so you can see exactly how far to move the
+        subject next. Tap any thumbnail to review: scrub frame by frame with the frames before and
+        after ghosted around it, play the shot back at your export frame rate to check the motion,
+        and delete any frame that didn't work. When you're happy, bake the set into a real MP4.
       </Text>
 
       <Pressable onPress={startShoot} style={styles.newBtn}>
@@ -276,6 +396,10 @@ const styles = StyleSheet.create({
   onionSliderWrap: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 16, paddingVertical: 8, backgroundColor: C.bg2 },
   thumbStrip: { maxHeight: 64, backgroundColor: C.bg2, paddingVertical: 8 },
   thumb: { width: 48, height: 48, borderRadius: 6 },
+  thumbOn: { borderWidth: 2, borderColor: C.red },
+  depthChip: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 40, borderWidth: 1, borderColor: C.lineStrong, backgroundColor: C.bg2 },
+  depthChipOn: { backgroundColor: C.red, borderColor: C.red },
+  playGlyph: { color: C.ink, fontSize: 22, fontFamily: F.sansMed },
   panel: { padding: 20, alignItems: "center" },
   shootRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 24 },
   shutter: { width: 72, height: 72, borderRadius: 36, borderWidth: 4, borderColor: C.lineStrong, alignItems: "center", justifyContent: "center" },

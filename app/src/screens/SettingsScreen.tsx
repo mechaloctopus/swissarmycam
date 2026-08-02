@@ -31,6 +31,7 @@ const CAPS: { name: string; level: string; tone: string }[] = [
   { name: "Room scan capture (guided multi-angle photo set)", level: "Possible now", tone: C.go },
   { name: "Underwater / record lock (hold-to-unlock touch guard)", level: "Possible now", tone: C.go },
   { name: "Claymation onion-skin capture + MP4 bake", level: "Possible now", tone: C.go },
+  { name: "Stop-motion review: multi-frame onion, scrub, playback, delete", level: "Possible now", tone: C.go },
   { name: "Cloud 3D reconstruction — video → Gaussian Splat (KIRI Engine)", level: "Possible now", tone: C.go },
   { name: "AR surface-locked trace / mural projection (ARCore)", level: "Possible now", tone: C.go },
   { name: "Printed-marker trace lock + true millimetre scale", level: "Possible now", tone: C.go },
