@@ -10,6 +10,7 @@ import { loadPictureSizes, sortSizes } from "../caps";
 import { storageBytes, humanBytes, clearAllCaptures, countMedia } from "../store";
 import { useEntitlement } from "../entitlements";
 import { getApiKey, setApiKey } from "../nerf";
+import { useTour } from "../tour";
 
 const CAPS: { name: string; level: string; tone: string }[] = [
   { name: "Photo + video capture, flip, flash, torch, zoom", level: "Possible now", tone: C.go },
@@ -47,6 +48,8 @@ const CAPS: { name: string; level: string; tone: string }[] = [
   { name: "Capture video mic-array selection / forced-off noise suppression", level: "Not exposed by expo-camera", tone: C.native },
   { name: "Manual ISO / shutter / RAW capture", level: "Requires native code", tone: C.native },
   { name: "Input mic-gain / audio DSP", level: "Requires native code", tone: C.native },
+  { name: "Guided in-app tour with live spotlight navigation", level: "Possible now", tone: C.go },
+  { name: "Animated aperture boot sequence", level: "Possible now", tone: C.go },
   { name: "IR / thermal / UV", level: "Requires attachment", tone: C.attach },
 ];
 
@@ -72,6 +75,7 @@ function describeBillingPeriod(period: string): string {
 
 export default function SettingsScreen({ focused }: { focused: boolean }) {
   const { settings, update, reset } = useSettings();
+  const { start: startTour } = useTour();
   const { pro, trial, recurring, busy, error, buy, restore, redeemCode, available: billingAvailable } = useEntitlement();
   const [codeInput, setCodeInput] = useState("");
   const [codeMsg, setCodeMsg] = useState<string | null>(null);
@@ -354,7 +358,11 @@ export default function SettingsScreen({ focused }: { focused: boolean }) {
         </View>
       </Section>
 
-      <Pressable onPress={() => Linking.openURL("https://github.com/mechaloctopus/swissarmycam")} style={styles.link}>
+      <Pressable onPress={startTour} style={[styles.link, { backgroundColor: C.red, borderColor: C.red }]}>
+        <Text style={[styles.linkText, { color: "#fff" }]}>◎  Take the tour</Text>
+      </Pressable>
+
+      <Pressable onPress={() => Linking.openURL("https://github.com/mechaloctopus/swissarmycam")} style={[styles.link, { marginTop: 10 }]}>
         <Text style={styles.linkText}>View the project on GitHub  →</Text>
       </Pressable>
       <Pressable onPress={confirmReset} style={[styles.link, { marginTop: 10 }]}>

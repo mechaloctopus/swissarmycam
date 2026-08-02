@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { View, Text, StyleSheet, Pressable, ScrollView, ActivityIndicator } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
@@ -8,6 +8,9 @@ import { EntitlementProvider, useEntitlement } from "./src/entitlements";
 import { C, F } from "./src/theme";
 import { Mark } from "./src/components/Mark";
 import { Mono } from "./src/components/ui";
+import { TourProvider, useTour } from "./src/tour";
+import { TourOverlay } from "./src/components/TourOverlay";
+import { BootSplash } from "./src/components/BootSplash";
 import CaptureScreen from "./src/screens/CaptureScreen";
 import StudioScreen from "./src/screens/StudioScreen";
 import TimelapseScreen from "./src/screens/TimelapseScreen";
@@ -67,6 +70,17 @@ function Shell() {
   const [mounted, setMounted] = useState<Set<string>>(new Set());
   const activeTab = TABS.find((t) => t.key === active)!;
   const { pro } = useEntitlement();
+  const { register, setNavigator } = useTour();
+  const tabScroll = useRef<ScrollView>(null);
+
+  // Let the tour drive real navigation, and pull the target tab into view
+  // first — a spotlight around a tab scrolled off the edge would frame nothing.
+  const goToTab = useCallback((key: string) => {
+    setActive(key);
+    const i = TABS.findIndex((t) => t.key === key);
+    if (i >= 0) tabScroll.current?.scrollTo({ x: Math.max(0, i * 78 - 90), animated: true });
+  }, []);
+  useEffect(() => setNavigator(goToTab), [setNavigator, goToTab]);
 
   const cameraReady = !!permission?.granted;
   const activeUnlocked = FREE_TABS.has(active) || pro;
@@ -108,11 +122,16 @@ function Shell() {
       </View>
 
       <View style={[styles.tabbarWrap, { paddingBottom: Math.max(insets.bottom, 8) }]}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabbar}>
+        <ScrollView ref={tabScroll} horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabbar}>
           {TABS.map((t) => {
             const on = t.key === active;
             return (
-              <Pressable key={t.key} onPress={() => setActive(t.key)} style={[styles.tab, on && styles.tabOn]}>
+              <Pressable
+                key={t.key}
+                ref={(node) => register(`tab.${t.key}`, node as unknown as View | null)}
+                onPress={() => setActive(t.key)}
+                style={[styles.tab, on && styles.tabOn]}
+              >
                 <Text style={[styles.tabGlyph, { color: on ? "#fff" : C.inkMute }]}>{t.glyph}</Text>
                 <Text style={[styles.tabName, { color: on ? "#fff" : C.inkMute }]}>{t.name}</Text>
               </Pressable>
@@ -120,6 +139,8 @@ function Shell() {
           })}
         </ScrollView>
       </View>
+
+      <TourOverlay />
     </View>
   );
 }
@@ -183,13 +204,17 @@ function PermissionGate({ onGrant, canAsk }: { onGrant: () => void; canAsk: bool
 }
 
 export default function App() {
+  const [booted, setBooted] = useState(false);
   return (
     <SafeAreaProvider>
       <SettingsProvider>
         <EntitlementProvider>
-          <Shell />
+          <TourProvider>
+            <Shell />
+          </TourProvider>
         </EntitlementProvider>
       </SettingsProvider>
+      {!booted && <BootSplash onDone={() => setBooted(true)} />}
     </SafeAreaProvider>
   );
 }

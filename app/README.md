@@ -57,6 +57,17 @@ where you'd start the trial or enter a code) — see "Selling on Google Play" be
 
 Everything is **local-first / private by default**. "Save to Photos" is an explicit action.
 
+### First run
+A **title sequence** opens the app: the mark's own aperture linkage unwinds from
+closed and the blades open, halos chase outward, the Swiss cross lands, and the
+wordmark rises. Tap to skip it.
+
+Then a **guided tour** starts once, walking the whole app. It spotlights each tab
+in the live UI — four dim panels framing the real element, not a mask or a
+screenshot — while actually navigating there, so you see each screen behind the
+bubble as it's explained. Skippable at any point and restartable from
+**Settings → Take the tour**.
+
 ## Run it in development
 
 ```bash
