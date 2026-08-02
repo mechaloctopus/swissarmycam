@@ -36,6 +36,7 @@ class ArTraceView(context: Context, appContext: AppContext) : ExpoView(context, 
   val onTrackingStateChange by EventDispatcher()
   val onAnchorPlaced by EventDispatcher()
   val onLockModeChange by EventDispatcher()
+  val onAutoLock by EventDispatcher()
   val onArError by EventDispatcher()
 
   private val glSurfaceView: GLSurfaceView = GLSurfaceView(context)
@@ -64,6 +65,10 @@ class ArTraceView(context: Context, appContext: AppContext) : ExpoView(context, 
 
   /** Printed width of the physical marker, in metres. Wrong value = wrong scale. */
   private var markerWidthMeters: Float = 0.1f
+
+  /** Runtime surface snapshot used as a marker when nothing is printed. */
+  @Volatile private var autoImage: Bitmap? = null
+  @Volatile private var autoImageWidth: Float = 0f
 
   init {
     renderer.view = this
@@ -120,12 +125,65 @@ class ArTraceView(context: Context, appContext: AppContext) : ExpoView(context, 
     try {
       val db = AugmentedImageDatabase(target)
       db.addImage(LensiiMarker.NAME, LensiiMarker.bitmap(), markerWidthMeters)
+      addAutoImage(db)
       config.augmentedImageDatabase = db
     } catch (e: Exception) {
       // Tracing still works off the tap-placed surface anchor without it.
-      onArError(mapOf("message" to "Marker tracking unavailable: ${e.message ?: "database error"}"))
+      // Posted, not called inline: buildConfig also runs on the GL thread when
+      // an auto lock is applied.
+      val msg = e.message ?: "database error"
+      post { onArError(mapOf("message" to "Marker tracking unavailable: $msg")) }
     }
     return config
+  }
+
+  /**
+   * Adds the runtime surface snapshot, if there is one. Kept in its own try so
+   * a snapshot ARCore judges untrackable — a blank sheet, a wall in flat light
+   * — is dropped without taking the printed marker down with it.
+   */
+  private fun addAutoImage(db: AugmentedImageDatabase) {
+    val img = autoImage ?: return
+    try {
+      if (autoImageWidth > 0f) db.addImage(AUTO_IMAGE_NAME, img, autoImageWidth)
+      else db.addImage(AUTO_IMAGE_NAME, img)
+    } catch (e: Exception) {
+      // Reported by the caller, which knows whether this survived.
+      autoImage = null
+      autoImageWidth = 0f
+    }
+  }
+
+  /**
+   * Registers a freshly grabbed surface snapshot and restarts the session on it.
+   * Called from the GL thread right after the frame it captured, which is a
+   * safe point to reconfigure — session.update() has already returned.
+   */
+  fun applyAutoLockImage(bmp: Bitmap, widthMeters: Float) {
+    autoImage = bmp
+    autoImageWidth = widthMeters
+    val s = session ?: return
+    try {
+      s.configure(buildConfig(s))
+      // addAutoImage clears the snapshot if ARCore judged it untrackable.
+      val ok = autoImage != null
+      val mm = (widthMeters * 1000f).toInt()
+      post {
+        onAutoLock(mapOf(
+          "ok" to ok,
+          "widthMm" to mm,
+          "reason" to if (ok) "" else "not enough texture on that surface",
+        ))
+      }
+    } catch (e: Exception) {
+      autoImage = null
+      autoImageWidth = 0f
+      post { onArError(mapOf("message" to (e.message ?: "Could not apply the auto lock"))) }
+    }
+  }
+
+  fun requestAutoLock() {
+    renderer.requestAutoLock()
   }
 
   fun setMarkerWidthMeters(v: Float) {

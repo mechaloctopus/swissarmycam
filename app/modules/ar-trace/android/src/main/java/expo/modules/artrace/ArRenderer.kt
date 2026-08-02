@@ -40,8 +40,16 @@ private const val EDGE_REF = 900f
 /** Lock quality, best-first. Reported to JS so the HUD can be honest about it. */
 const val LOCK_NONE = "NONE"
 const val LOCK_SURFACE = "SURFACE"
+const val LOCK_AUTO_COASTING = "AUTO_COASTING"
+const val LOCK_AUTO = "AUTO"
 const val LOCK_MARKER_COASTING = "MARKER_COASTING"
 const val LOCK_MARKER = "MARKER"
+
+/** Trackable name for a surface snapshot registered at runtime (no printing). */
+const val AUTO_IMAGE_NAME = "lensii-auto-surface"
+
+/** Fraction of the short viewport edge captured as the auto-lock reference. */
+private const val AUTO_CROP = 0.7f
 
 // Full-screen quad in NDC, triangle-strip order BL, BR, TL, TR — also the
 // exact input format ARCore's Frame.transformCoordinates2d expects.
@@ -174,6 +182,8 @@ class ArRenderer(
   private var markerAnchor: Anchor? = null
   /** Stable reference — ARCore mutates the trackable in place each frame. */
   private var markerImage: AugmentedImage? = null
+  /** Whether the active marker lock is a runtime snapshot rather than the printed marker. */
+  private var markerIsAuto = false
   private var lastReportedState: TrackingState? = null
   private var lastLockMode = LOCK_NONE
   private var geometrySet = false
@@ -215,6 +225,7 @@ class ArRenderer(
   @Volatile private var pendingBitmapValue: Bitmap? = null
   @Volatile private var lastBitmap: Bitmap? = null
   private val resetRequested = AtomicBoolean(false)
+  private val autoLockRequested = AtomicBoolean(false)
 
   fun attachSession(session: Session?) {
     currentSession = session
@@ -223,6 +234,7 @@ class ArRenderer(
     markerAnchor?.detach()
     markerAnchor = null
     markerImage = null
+    markerIsAuto = false
     lastReportedState = null
     lastLockMode = LOCK_NONE
     geometrySet = false
@@ -242,6 +254,10 @@ class ArRenderer(
 
   fun clearAnchor() {
     resetRequested.set(true)
+  }
+
+  fun requestAutoLock() {
+    autoLockRequested.set(true)
   }
 
   /**
@@ -339,6 +355,13 @@ class ArRenderer(
 
     drawCameraBackground()
 
+    // Straight after the camera background and before any overlay: the
+    // framebuffer holds exactly the camera pixels, nothing of ours drawn over.
+    if (autoLockRequested.compareAndSet(true, false)) {
+      if (camera.trackingState == TrackingState.TRACKING) captureAutoLock(frame, camera)
+      else onError("Hold still until tracking starts, then try the auto lock again")
+    }
+
     val trackingState = camera.trackingState
     if (trackingState != lastReportedState) {
       lastReportedState = trackingState
@@ -351,6 +374,7 @@ class ArRenderer(
       markerAnchor?.detach()
       markerAnchor = null
       markerImage = null
+      markerIsAuto = false
     }
 
     updateMarker(frame)
@@ -395,8 +419,8 @@ class ArRenderer(
     val pose: Pose? = liveMarker?.centerPose ?: markerFallback?.pose ?: surface?.pose
 
     val lockMode = when {
-      liveMarker != null -> LOCK_MARKER
-      markerFallback != null -> LOCK_MARKER_COASTING
+      liveMarker != null -> if (markerIsAuto) LOCK_AUTO else LOCK_MARKER
+      markerFallback != null -> if (markerIsAuto) LOCK_AUTO_COASTING else LOCK_MARKER_COASTING
       surface != null -> LOCK_SURFACE
       else -> LOCK_NONE
     }
@@ -413,6 +437,57 @@ class ArRenderer(
   }
 
   /**
+   * "Lazy mode": grab whatever is already on the surface and register it as a
+   * tracking image at runtime, so you get marker-grade re-localization without
+   * printing anything.
+   *
+   * Scale still has to come from somewhere, and here it's derived rather than
+   * measured by hand: ARCore hit-tests the centre of frame for the distance to
+   * the surface, and the projection matrix gives the angle the viewport spans,
+   * so the real width of the captured crop falls out of the two. If nothing is
+   * hit we register without a width and let ARCore estimate it — less accurate,
+   * but it still locks.
+   *
+   * The honest limit is texture: a blank sheet of paper has no features to
+   * match, and no amount of code invents them. addImage rejects a low-quality
+   * reference and the caller says so plainly.
+   */
+  private fun captureAutoLock(frame: Frame, camera: Camera) {
+    val side = (minOf(viewportWidth, viewportHeight) * AUTO_CROP).toInt().coerceAtLeast(64)
+    val left = (viewportWidth - side) / 2
+    val bottom = (viewportHeight - side) / 2
+
+    val buf = ByteBuffer.allocateDirect(side * side * 4).order(ByteOrder.nativeOrder())
+    GLES20.glReadPixels(left, bottom, side, side, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, buf)
+    buf.rewind()
+
+    val raw = Bitmap.createBitmap(side, side, Bitmap.Config.ARGB_8888)
+    raw.copyPixelsFromBuffer(buf)
+    // glReadPixels origin is bottom-left; the reference image has to be upright.
+    val flip = android.graphics.Matrix().apply { postScale(1f, -1f, side / 2f, side / 2f) }
+    val upright = Bitmap.createBitmap(raw, 0, 0, side, side, flip, false)
+    raw.recycle()
+
+    val proj = FloatArray(16)
+    camera.getProjectionMatrix(proj, 0, 0.05f, 100f)
+    val hit = frame.hitTest(viewportWidth / 2f, viewportHeight / 2f).firstOrNull { r ->
+      val t = r.trackable
+      (t is Plane && t.trackingState == TrackingState.TRACKING && t.isPoseInPolygon(r.hitPose)) ||
+        (t is Point && t.trackingState == TrackingState.TRACKING)
+    }
+
+    // Visible half-width at depth d is d / proj[0]; the crop covers
+    // side/viewportWidth of that, and the digital zoom narrows it further.
+    val zoom = view.cameraZoom.coerceAtLeast(0.01f)
+    val widthMeters =
+      if (hit != null && proj[0] > 0f) {
+        2f * hit.distance / (proj[0] * zoom) * (side.toFloat() / viewportWidth)
+      } else 0f
+
+    view.applyAutoLockImage(upright, widthMeters)
+  }
+
+  /**
    * Picks up the printed Lensii marker. ARCore reports it as an AugmentedImage
    * trackable; anchoring to the trackable (rather than to a world pose) means
    * ARCore keeps correcting the anchor every time it sees the marker again.
@@ -423,19 +498,30 @@ class ArRenderer(
    */
   private fun updateMarker(frame: Frame) {
     for (img in frame.getUpdatedTrackables(AugmentedImage::class.java)) {
-      if (img.name != LensiiMarker.NAME) continue
+      val isAuto = img.name == AUTO_IMAGE_NAME
+      if (!isAuto && img.name != LensiiMarker.NAME) continue
       when (img.trackingState) {
         TrackingState.TRACKING -> {
-          if (markerAnchor == null) {
+          // The printed marker outranks a runtime snapshot — its width was
+          // measured by hand, not inferred from a hit test — so it takes over
+          // if both happen to be in view.
+          if (markerAnchor == null || (markerIsAuto && !isAuto)) {
+            markerAnchor?.detach()
             markerAnchor = img.createAnchor(img.centerPose)
+            markerIsAuto = isAuto
+            markerImage = img
             onAnchorResult(true)
+          } else if (markerIsAuto == isAuto) {
+            markerImage = img
           }
-          markerImage = img
         }
         TrackingState.STOPPED -> {
-          markerAnchor?.detach()
-          markerAnchor = null
-          markerImage = null
+          // Only drop the lock if it's this trackable that died.
+          if (markerImage === img) {
+            markerAnchor?.detach()
+            markerAnchor = null
+            markerImage = null
+          }
         }
         else -> Unit
       }

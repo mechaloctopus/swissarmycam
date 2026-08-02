@@ -14,6 +14,8 @@ const PAN_METERS_PER_PX = 0.0018;
 const LOCK_COPY: Record<ArLockMode, { text: string; good: boolean }> = {
   MARKER: { text: "MARKER LOCK", good: true },
   MARKER_COASTING: { text: "MARKER · COASTING", good: false },
+  AUTO: { text: "AUTO LOCK", good: true },
+  AUTO_COASTING: { text: "AUTO · COASTING", good: false },
   SURFACE: { text: "SURFACE LOCK", good: true },
   NONE: { text: "NO LOCK", good: false },
 };
@@ -54,6 +56,8 @@ export default function TraceScreen({ focused }: { focused: boolean }) {
   const [sharingMarker, setSharingMarker] = useState(false);
   const [lockMode, setLockMode] = useState<ArLockMode>("NONE");
 
+  const [autoTrigger, setAutoTrigger] = useState(0);
+  const [autoNote, setAutoNote] = useState<string | null>(null);
   const [anchorPlaced, setAnchorPlaced] = useState(false);
   const [placeAt, setPlaceAt] = useState({ x: 0.5, y: 0.5 });
   const [placeTrigger, setPlaceTrigger] = useState(0);
@@ -118,6 +122,7 @@ export default function TraceScreen({ focused }: { focused: boolean }) {
   const doReset = () => {
     setAnchorPlaced(false);
     setLockMode("NONE");
+    setAutoNote(null);
     setOffsetX(0);
     setOffsetY(0);
     setRotation(0);
@@ -217,6 +222,16 @@ export default function TraceScreen({ focused }: { focused: boolean }) {
             placeAnchorY={placeAt.y}
             placeAnchorTrigger={placeTrigger}
             resetTrigger={resetTrigger}
+            autoLockTrigger={autoTrigger}
+            onAutoLock={(e) => {
+              const { ok, widthMm, reason } = e.nativeEvent;
+              setAutoNote(
+                ok
+                  ? `Auto lock set — captured about ${widthMm} mm of surface.`
+                  : `Auto lock failed: ${reason}. Put something with detail in frame, or use the printed marker.`,
+              );
+              if (ok) setArError(null);
+            }}
             paused={!focused}
             onTrackingStateChange={(e) => setTrackingState(e.nativeEvent.state)}
             onLockModeChange={(e) => setLockMode(e.nativeEvent.mode)}
@@ -240,10 +255,12 @@ export default function TraceScreen({ focused }: { focused: boolean }) {
           </View>
         </View>
 
-        {lockMode === "MARKER_COASTING" && (
+        <View pointerEvents="none" style={styles.autoGuide} />
+
+        {(lockMode === "MARKER_COASTING" || lockMode === "AUTO_COASTING") && (
           <View pointerEvents="none" style={[styles.hint, { bottom: undefined, top: 56 }]}>
             <Mono color={C.inkSoft} size={11}>
-              Marker out of frame — riding ARCore's world map. Bring it back into view to re-lock.
+              Lock target out of frame — riding ARCore's world map. Bring it back into view to re-lock.
             </Mono>
           </View>
         )}
@@ -295,7 +312,28 @@ export default function TraceScreen({ focused }: { focused: boolean }) {
         </Row>
 
         <View style={styles.markerBox}>
-          <Mono color={C.inkSoft} size={11}>Marker lock — the accurate way</Mono>
+          <Mono color={C.inkSoft} size={11}>Auto lock — no printing</Mono>
+          <Text style={styles.footnote}>
+            Point at your surface so the square below frames it, hold the phone roughly square-on,
+            and tap. Lensii grabs whatever texture is already there — desk grain, existing pencil
+            lines, a coin you drop on the page — and tracks that, working out its real size from
+            how far away it is. A completely blank sheet has nothing to lock onto; that's a limit
+            of the physics, not a setting, so give it something to see.
+          </Text>
+          <View style={styles.row}>
+            <Pressable onPress={() => { setAutoNote(null); setAutoTrigger((t) => t + 1); }} style={styles.smallBtn}>
+              <Mono color="#fff" size={11}>◎ Auto lock this surface</Mono>
+            </Pressable>
+          </View>
+          {autoNote && (
+            <Mono color={autoNote.startsWith("Auto lock set") ? C.go : C.red} size={11} style={{ marginTop: 8 }}>
+              {autoNote}
+            </Mono>
+          )}
+        </View>
+
+        <View style={styles.markerBox}>
+          <Mono color={C.inkSoft} size={11}>Marker lock — the most accurate way</Mono>
           <Text style={styles.footnote}>
             Print the marker, tape it to your paper or wall, and keep it in shot. The camera
             re-finds it every frame, so the image stays planted instead of slowly sliding, and its
@@ -346,6 +384,17 @@ const styles = StyleSheet.create({
   smallBtn: { backgroundColor: C.red, borderRadius: 40, paddingHorizontal: 12, paddingVertical: 8 },
   smallBtnGhost: { backgroundColor: C.surface, borderWidth: 1, borderColor: C.lineStrong, marginLeft: 8 },
   footnote: { color: C.inkFaint, fontSize: 11.5, lineHeight: 17, marginTop: 10 },
+  autoGuide: {
+    position: "absolute",
+    alignSelf: "center",
+    top: "50%",
+    width: "70%",
+    aspectRatio: 1,
+    marginTop: "-35%",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.35)",
+    borderRadius: 6,
+  },
   markerBox: { marginTop: 14, backgroundColor: C.surface, borderWidth: 1, borderColor: C.line, borderRadius: 10, padding: 12 },
   errBox: { marginTop: 10, backgroundColor: C.surface, borderWidth: 1, borderColor: C.line, borderLeftWidth: 3, borderLeftColor: C.red, borderRadius: 8, padding: 10 },
 });

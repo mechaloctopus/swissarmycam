@@ -54,7 +54,7 @@ class ArTraceModule : Module() {
     }
 
     View(ArTraceView::class) {
-      Events("onTrackingStateChange", "onAnchorPlaced", "onLockModeChange", "onArError")
+      Events("onTrackingStateChange", "onAnchorPlaced", "onLockModeChange", "onAutoLock", "onArError")
 
       Prop("imageUri") { view: ArTraceView, uri: String? -> view.setOverlayImage(uri) }
       Prop("overlayOpacity") { view: ArTraceView, v: Float -> view.overlayOpacity = v }
@@ -70,6 +70,7 @@ class ArTraceModule : Module() {
       Prop("placeAnchorY") { view: ArTraceView, v: Float -> view.pendingTapY = v }
       Prop("placeAnchorTrigger") { view: ArTraceView, _: Int -> view.requestPlaceAnchor() }
       Prop("resetTrigger") { view: ArTraceView, _: Int -> view.resetAnchor() }
+      Prop("autoLockTrigger") { view: ArTraceView, _: Int -> view.requestAutoLock() }
       Prop("paused") { view: ArTraceView, v: Boolean -> view.setPaused(v) }
     }
   }

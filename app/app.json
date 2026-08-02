@@ -2,7 +2,7 @@
   "expo": {
     "name": "Lensii",
     "slug": "lensii",
-    "version": "0.23.0",
+    "version": "0.24.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "lensii",
@@ -27,7 +27,7 @@
     },
     "android": {
       "package": "com.swissarmycamera.app",
-      "versionCode": 25,
+      "versionCode": 26,
       "userInterfaceStyle": "dark",
       "adaptiveIcon": {
         "backgroundColor": "#0B0B0C",
@@ -61,6 +61,7 @@
         }
       ],
       "./plugins/withReleaseSigning",
+      "./plugins/withCameraIntents",
       "./plugins/withTrimmedPermissions"
     ]
   }

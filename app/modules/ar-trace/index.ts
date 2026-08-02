@@ -76,10 +76,19 @@ export type ArTrackingState = "TRACKING" | "PAUSED" | "STOPPED";
  * Which lock the overlay is currently riding on, best-first:
  *  - MARKER: the printed marker is in view and being re-detected every frame.
  *  - MARKER_COASTING: marker out of frame, riding ARCore's world map.
+ *  - AUTO / AUTO_COASTING: same, but locked to a snapshot of the surface taken
+ *    at runtime instead of a printed marker — no printing, slightly less exact
+ *    scale (it's derived from a hit test rather than measured by hand).
  *  - SURFACE: a tap-placed SLAM anchor, no marker involved.
  *  - NONE: nothing locked yet.
  */
-export type ArLockMode = "NONE" | "SURFACE" | "MARKER_COASTING" | "MARKER";
+export type ArLockMode =
+  | "NONE"
+  | "SURFACE"
+  | "AUTO_COASTING"
+  | "AUTO"
+  | "MARKER_COASTING"
+  | "MARKER";
 
 export type ArTraceViewProps = {
   style?: StyleProp<ViewStyle>;
@@ -116,11 +125,19 @@ export type ArTraceViewProps = {
   placeAnchorTrigger?: number;
   /** Bump this to detach the current anchor so the next tap can place a new one. */
   resetTrigger?: number;
+  /**
+   * Bump this to grab the centre of the current view and register it as a
+   * tracking image — marker-grade lock with nothing printed, as long as the
+   * surface actually has some texture on it.
+   */
+  autoLockTrigger?: number;
   /** Pauses the AR session (e.g. screen not focused) without tearing down the view. */
   paused?: boolean;
   onTrackingStateChange?: (e: { nativeEvent: { state: ArTrackingState } }) => void;
   onAnchorPlaced?: (e: { nativeEvent: { success: boolean } }) => void;
   onLockModeChange?: (e: { nativeEvent: { mode: ArLockMode } }) => void;
+  /** Result of an autoLockTrigger. `widthMm` is the measured size of the captured region. */
+  onAutoLock?: (e: { nativeEvent: { ok: boolean; widthMm: number; reason: string } }) => void;
   onArError?: (e: { nativeEvent: { message: string } }) => void;
 };
 
