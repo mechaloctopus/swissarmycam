@@ -11,6 +11,8 @@ import { Mono } from "./src/components/ui";
 import { TourProvider, useTour } from "./src/tour";
 import { TourOverlay } from "./src/components/TourOverlay";
 import { BootSplash } from "./src/components/BootSplash";
+import { ErrorBoundary } from "./src/components/ErrorBoundary";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import CaptureScreen from "./src/screens/CaptureScreen";
 import StudioScreen from "./src/screens/StudioScreen";
 import TimelapseScreen from "./src/screens/TimelapseScreen";
@@ -66,6 +68,19 @@ function Screen({ tabKey, focused }: { tabKey: string; focused: boolean }) {
 function Shell() {
   const insets = useSafeAreaInsets();
   const [active, setActive] = useState("capture");
+
+  // Come back to the tab you were on. Restoring is skipped for gated tabs so a
+  // lapsed subscription can't strand you on a paywall at launch.
+  useEffect(() => {
+    AsyncStorage.getItem("lensii.activeTab")
+      .then((k) => {
+        if (k && TABS.some((t) => t.key === k)) setActive(k);
+      })
+      .catch(() => {});
+  }, []);
+  useEffect(() => {
+    AsyncStorage.setItem("lensii.activeTab", active).catch(() => {});
+  }, [active]);
   const [permission, requestPermission] = useCameraPermissions();
   const [mounted, setMounted] = useState<Set<string>>(new Set());
   const activeTab = TABS.find((t) => t.key === active)!;
@@ -111,7 +126,7 @@ function Shell() {
               key={t.key}
               style={[StyleSheet.absoluteFill, { paddingTop: insets.top, display: isActive ? "flex" : "none" }]}
             >
-              <Screen tabKey={t.key} focused={isActive} />
+              <ErrorBoundary><Screen tabKey={t.key} focused={isActive} /></ErrorBoundary>
             </View>
           );
         })}

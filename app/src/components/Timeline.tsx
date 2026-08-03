@@ -81,7 +81,12 @@ export function Timeline({
   };
 
   const emitSeek = (pageX: number) => {
+    // measureInWindow may not have landed yet, and pps can arrive as 0 on the
+    // very first layout pass — both produce NaN/Infinity here, which is fatal
+    // once it reaches the native player.
+    if (!Number.isFinite(pageX) || !Number.isFinite(pps) || pps <= 0) return;
     const t = (pageX - scrubGeo.current.x) / pps;
+    if (!Number.isFinite(t)) return;
     onSeek(Math.max(0, Math.min(safeDuration, t)));
   };
 

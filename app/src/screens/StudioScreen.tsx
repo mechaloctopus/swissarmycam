@@ -9,6 +9,7 @@ import {
   Modal,
   TextInput,
   ActivityIndicator,
+  Alert,
 } from "react-native";
 import { Image } from "expo-image";
 import * as Haptics from "expo-haptics";
@@ -55,6 +56,19 @@ import {
 } from "../timeline";
 
 type PanelTab = "layers" | "animate" | "clip" | "audio";
+
+/**
+ * expo-video throws (natively) on a non-finite seek or on a player whose
+ * source failed to attach. Neither is worth crashing the editor over.
+ */
+function safeSeek(p: { currentTime: number }, t: number) {
+  if (!Number.isFinite(t)) return;
+  try {
+    p.currentTime = Math.max(0, t);
+  } catch {
+    // ignore — the playhead stays put
+  }
+}
 
 let seq = 0;
 const nextId = () => `L${++seq}`;
@@ -141,15 +155,49 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
 
   // ---- autosave / resume -----------------------------------------------
   const [savedProject, setSavedProject] = useState<Snapshot | null>(null);
+  // Restore on mount rather than offering a button: after a crash or a swipe
+  // away, "where I left off" is the expected place to land, and the work is
+  // already on disk. Discarding is the deliberate action, not resuming.
   useEffect(() => {
     AsyncStorage.getItem("lensii.studio.project")
       .then((raw) => {
         if (!raw) return;
         const p = JSON.parse(raw) as Snapshot;
-        if (p.clips?.length) setSavedProject(p);
+        if (!p.clips?.length) return;
+        setSavedProject(p);
+        let maxN = 0;
+        for (const l of p.layers ?? []) maxN = Math.max(maxN, parseInt(l.id.slice(1), 10) || 0);
+        for (const c of p.clips) maxN = Math.max(maxN, parseInt(c.id.slice(1), 10) || 0);
+        for (const a of p.audios ?? []) maxN = Math.max(maxN, parseInt(a.id.slice(1), 10) || 0);
+        seq = Math.max(seq, maxN);
+        setClips(p.clips);
+        setLayers(p.layers ?? []);
+        setAudios(p.audios ?? []);
       })
       .catch(() => {});
   }, []);
+
+  /** Clears the project and the saved copy — the deliberate way to start over. */
+  const newProject = () => {
+    Alert.alert("Start a new project?", "This clears the current timeline. Exported videos in your Library are untouched.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Start new",
+        style: "destructive",
+        onPress: () => {
+          setClips([]);
+          setLayers([]);
+          setAudios([]);
+          setSelectedId(null);
+          setSelectedAudio(null);
+          setSavedProject(null);
+          undoStack.current = [];
+          redoStack.current = [];
+          AsyncStorage.removeItem("lensii.studio.project").catch(() => {});
+        },
+      },
+    ]);
+  };
 
 
   const activeClip: BaseClip | null = clips[activeIndex] ?? null;
@@ -186,15 +234,21 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
   /** Moves the playhead anywhere on the global timeline, switching clip if needed. */
   const seekTimeline = useCallback(
     (t: number) => {
+      // Every write to player.currentTime is guarded for finiteness. A scrub
+      // that fires before the timeline has been measured produces NaN, and
+      // handing NaN to the native player kills the process — which is what
+      // made tapping the timeline close the app.
+      if (!Number.isFinite(t)) return;
       const hit = clipAtTime(clips, Math.max(0, t));
       if (!hit) return;
       const srcTarget = hit.clip.trimIn + hit.localT * Math.max(0.01, hit.clip.speed);
+      if (!Number.isFinite(srcTarget)) return;
       if (hit.index !== activeIndex) {
         setActiveIndex(hit.index);
         // The source swap is async; seek once the new clip is loaded.
         pendingSeek.current = srcTarget;
       } else {
-        player.currentTime = srcTarget;
+        safeSeek(player, srcTarget);
         setSourceTime(srcTarget);
       }
     },
@@ -207,9 +261,13 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
     pendingSeek.current = null;
     // A frame's grace for the new source to attach before seeking into it.
     const id = setTimeout(() => {
-      player.currentTime = target;
+      safeSeek(player, target);
       setSourceTime(target);
-      if (wasPlaying.current) player.play();
+      try {
+        if (wasPlaying.current) player.play();
+      } catch {
+        // player released mid-swap; the next render re-attaches it
+      }
     }, 60);
     return () => clearTimeout(id);
   }, [activeIndex, activeClip, player]);
@@ -217,9 +275,14 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
   // Preview honours the active clip's speed/pitch/mute so what you see bakes.
   useEffect(() => {
     if (!activeClip) return;
-    player.playbackRate = activeClip.speed;
-    player.preservesPitch = activeClip.preservePitch;
-    player.muted = activeClip.muted;
+    try {
+      player.playbackRate = activeClip.speed;
+      player.preservesPitch = activeClip.preservePitch;
+      player.muted = activeClip.muted;
+    } catch {
+      // A player whose source failed to load throws on these; the preview just
+      // stays where it is rather than taking the app down with it.
+    }
   }, [player, activeClip]);
 
   // Roll onto the next clip when this one passes its out point.
@@ -262,14 +325,15 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
   settingsRef.current = settings;
   stateRef.current = { clips, layers, audios };
 
-  // Autosave the project (debounced) so closing the app never loses an edit.
+  // Autosave. Short window because whatever it hasn't written yet is exactly
+  // what a crash costs you, and audios are included — they were being dropped.
   useEffect(() => {
     if (clips.length === 0) return;
     const id = setTimeout(() => {
-      AsyncStorage.setItem("lensii.studio.project", JSON.stringify({ clips, layers })).catch(() => {});
-    }, 800);
+      AsyncStorage.setItem("lensii.studio.project", JSON.stringify({ clips, layers, audios })).catch(() => {});
+    }, 250);
     return () => clearTimeout(id);
-  }, [clips, layers]);
+  }, [clips, layers, audios]);
 
   const resumeSaved = () => {
     if (!savedProject) return;
@@ -579,6 +643,9 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
           <Mono color={C.inkMute} size={11}>‹ new</Mono>
         </Pressable>
         <View style={{ flexDirection: "row", gap: 14, alignItems: "center" }}>
+          <Pressable onPress={newProject} hitSlop={8}>
+            <Text style={{ color: C.inkMute, fontSize: 17 }}>✚</Text>
+          </Pressable>
           <Pressable onPress={undo} disabled={undoStack.current.length === 0} hitSlop={8}>
             <Text style={{ color: undoStack.current.length ? C.ink : C.inkFaint, fontSize: 17 }}>↺</Text>
           </Pressable>

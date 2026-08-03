@@ -310,7 +310,7 @@ export default function CaptureScreen({ focused }: { focused: boolean }) {
           <MiniTool glyph="#" label={settings.gridType} on={settings.grid} onPress={() => update({ grid: !settings.grid })} />
           <MiniTool glyph="⊹" label="Level" on={settings.level} onPress={() => update({ level: !settings.level })} />
           <MiniTool glyph="✛" label="Reticle" on={settings.reticle} onPress={() => update({ reticle: !settings.reticle })} />
-          <MiniTool glyph="⧗" label={`Timer ${settings.timerDefault}s`} on={settings.timerDefault > 0} onPress={() => update({ timerDefault: TIMERS[(TIMERS.indexOf(settings.timerDefault) + 1) % TIMERS.length] })} />
+          <MiniTool glyph="⧗" label={settings.timerDefault > 0 ? `Timer ${settings.timerDefault}s` : "Timer off"} on={settings.timerDefault > 0} onPress={() => update({ timerDefault: TIMERS[(TIMERS.indexOf(settings.timerDefault) + 1) % TIMERS.length] })} />
           <MiniTool glyph="⬥" label="Underwater" on={settings.underwaterLock} onPress={() => update({ underwaterLock: !settings.underwaterLock })} />
           <MiniTool glyph="⌬" label="Analyze" onPress={runAnalysis} />
         </View>

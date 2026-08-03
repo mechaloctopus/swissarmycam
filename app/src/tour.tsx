@@ -183,8 +183,12 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
     if (!active) return;
     const s = TOUR_STEPS[step];
     if (s.tab) navigate.current(s.tab);
-    setRect(null);
-    if (!s.target) return;
+    // Only steps that genuinely have no target drop the spotlight; the rest
+    // hold the previous rect until the new measurement lands.
+    if (!s.target) {
+      setRect(null);
+      return;
+    }
 
     let cancelled = false;
     const timer = setTimeout(() => {
