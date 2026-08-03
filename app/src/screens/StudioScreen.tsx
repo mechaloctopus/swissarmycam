@@ -21,6 +21,7 @@ import { Label, Mono } from "../components/ui";
 import { Slider, Segmented } from "../components/controls";
 import { Timeline } from "../components/Timeline";
 import { listMedia, newVideoOutputPath } from "../store";
+import * as FileSystem from "expo-file-system/legacy";
 import { pickImageFromLibrary, pickVideoFromLibrary, pickAudioFile, saveToPhotos } from "../media";
 import { useSettings } from "../settings";
 import { isVideoExportAvailable, exportTimeline } from "video-exporter";
@@ -160,19 +161,44 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
   // already on disk. Discarding is the deliberate action, not resuming.
   useEffect(() => {
     AsyncStorage.getItem("lensii.studio.project")
-      .then((raw) => {
+      .then(async (raw) => {
         if (!raw) return;
-        const p = JSON.parse(raw) as Snapshot;
+        let p = JSON.parse(raw) as Snapshot;
         if (!p.clips?.length) return;
+
+        // Restoring is automatic now, so it has to verify its own media first:
+        // a project whose files were since deleted would otherwise reload
+        // silently and hand dead URIs to the decoders.
+        const alive = async (uri?: string) => {
+          if (!uri) return false;
+          if (!uri.startsWith("file://") && !uri.startsWith("/")) return true; // content:// — can't stat, let it try
+          try {
+            return (await FileSystem.getInfoAsync(uri)).exists;
+          } catch {
+            return false;
+          }
+        };
+        const clipsOk: BaseClip[] = [];
+        for (const c of p.clips) if (await alive(c.uri)) clipsOk.push(c);
+        if (clipsOk.length === 0) {
+          AsyncStorage.removeItem("lensii.studio.project").catch(() => {});
+          return;
+        }
+        const layersOk: Layer[] = [];
+        for (const l of p.layers ?? []) if (l.kind === "text" || (await alive(l.uri))) layersOk.push(l);
+        const audiosOk: AudioTrack[] = [];
+        for (const a of p.audios ?? []) if (await alive(a.uri)) audiosOk.push(a);
+
+        p = { clips: clipsOk, layers: layersOk, audios: audiosOk };
         setSavedProject(p);
         let maxN = 0;
-        for (const l of p.layers ?? []) maxN = Math.max(maxN, parseInt(l.id.slice(1), 10) || 0);
-        for (const c of p.clips) maxN = Math.max(maxN, parseInt(c.id.slice(1), 10) || 0);
-        for (const a of p.audios ?? []) maxN = Math.max(maxN, parseInt(a.id.slice(1), 10) || 0);
+        for (const l of layersOk) maxN = Math.max(maxN, parseInt(l.id.slice(1), 10) || 0);
+        for (const c of clipsOk) maxN = Math.max(maxN, parseInt(c.id.slice(1), 10) || 0);
+        for (const a of audiosOk) maxN = Math.max(maxN, parseInt(a.id.slice(1), 10) || 0);
         seq = Math.max(seq, maxN);
-        setClips(p.clips);
-        setLayers(p.layers ?? []);
-        setAudios(p.audios ?? []);
+        setClips(clipsOk);
+        setLayers(layersOk);
+        setAudios(audiosOk);
       })
       .catch(() => {});
   }, []);
