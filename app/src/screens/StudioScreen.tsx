@@ -897,6 +897,8 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
             duration={timelineDuration}
             onBegin={pushHistory}
             onPatchPose={patchPose}
+            canvasW={canvas.w}
+            canvasH={canvas.h}
             onAddKeyframe={() => {
               pushHistory();
               haptic();
@@ -1041,6 +1043,8 @@ function AnimatePanel({
   duration,
   onBegin,
   onPatchPose,
+  canvasW,
+  canvasH,
   onAddKeyframe,
   onRemoveKeyframe,
   onPatchLayer,
@@ -1054,6 +1058,8 @@ function AnimatePanel({
   /** Snapshot-for-undo hook, fired once when a slider drag begins. */
   onBegin: () => void;
   onPatchPose: (p: Partial<Keyframe>) => void;
+  canvasW: number;
+  canvasH: number;
   onAddKeyframe: () => void;
   onRemoveKeyframe: (t: number) => void;
   onPatchLayer: (p: Partial<Layer>) => void;
@@ -1092,10 +1098,32 @@ function AnimatePanel({
       </Pressable>
       <Mono color={C.inkFaint} size={9.5}>
         {layer.keyframes.length <= 1
-          ? "One keyframe = static. Drag it on the canvas to place it, then add a second keyframe to start animating."
-          : "Animated — dragging on the canvas writes a keyframe at the playhead."}
+          ? "One keyframe = static. Drag it on the canvas or use X/Y below to place it, then scrub the timeline and add a second keyframe to start animating."
+          : "Animated — dragging on the canvas, or moving X/Y, writes a keyframe at the playhead."}
       </Mono>
 
+      <Ctrl label={`X · ${Math.round(pose.x)}px`}>
+        <Slider
+          onBegin={onBegin}
+          value={Math.round(pose.x)}
+          min={-200}
+          max={Math.max(220, Math.round(canvasW) || 400)}
+          step={1}
+          onChange={(v) => onPatchPose({ x: v })}
+          width={132}
+        />
+      </Ctrl>
+      <Ctrl label={`Y · ${Math.round(pose.y)}px`}>
+        <Slider
+          onBegin={onBegin}
+          value={Math.round(pose.y)}
+          min={-200}
+          max={Math.max(220, Math.round(canvasH) || 400)}
+          step={1}
+          onChange={(v) => onPatchPose({ y: v })}
+          width={132}
+        />
+      </Ctrl>
       <Ctrl label="Size">
         <Slider onBegin={onBegin} value={Math.round(pose.scale * 100)} min={10} max={500} step={5} onChange={(v) => onPatchPose({ scale: v / 100 })} width={132} />
       </Ctrl>
