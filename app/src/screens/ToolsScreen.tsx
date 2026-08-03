@@ -194,7 +194,7 @@ const styles = StyleSheet.create({
   resultText: { color: C.red, fontFamily: F.mono, fontSize: 20, fontWeight: "700" },
   swapBtn: { width: 38, height: 38, borderRadius: 19, borderWidth: 1, borderColor: C.lineStrong, alignItems: "center", justifyContent: "center", marginBottom: 20 },
   unitChip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 40, borderWidth: 1, borderColor: C.line, backgroundColor: C.surface2 },
-  unitChipOn: { backgroundColor: C.ink, borderColor: C.ink },
+  unitChipOn: { backgroundColor: C.red, borderColor: C.red },
   unitChipText: { color: C.inkSoft, fontFamily: F.mono, fontSize: 11.5 },
   nerfCard: { borderColor: C.attach, backgroundColor: "rgba(154,108,255,0.06)" },
   nerfHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: 12 },

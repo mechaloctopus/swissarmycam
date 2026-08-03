@@ -13,32 +13,27 @@ import { TourOverlay } from "./src/components/TourOverlay";
 import { BootSplash } from "./src/components/BootSplash";
 import { ErrorBoundary } from "./src/components/ErrorBoundary";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import CaptureScreen from "./src/screens/CaptureScreen";
+import CaptureHub from "./src/screens/CaptureHub";
 import StudioScreen from "./src/screens/StudioScreen";
-import TimelapseScreen from "./src/screens/TimelapseScreen";
 import AttachmentsScreen from "./src/screens/AttachmentsScreen";
 import ToolsScreen from "./src/screens/ToolsScreen";
 import LibraryScreen from "./src/screens/LibraryScreen";
 import SettingsScreen from "./src/screens/SettingsScreen";
-import ScreenRecordScreen from "./src/screens/ScreenRecordScreen";
 import RoomScanScreen from "./src/screens/RoomScanScreen";
-import ClaymationScreen from "./src/screens/ClaymationScreen";
-import TraceScreen from "./src/screens/TraceScreen";
 
 type Kind = "camera" | "plain";
 type Tab = { key: string; name: string; glyph: string; kind: Kind };
 
+// Capture owns every mode that points a camera at something — photo, video,
+// timelapse, clay, trace and screen recording all live inside it now. What
+// stays a tab is what you do *after* capturing, or to the device itself.
 const TABS: Tab[] = [
   { key: "capture", name: "Capture", glyph: "◎", kind: "camera" },
   { key: "studio", name: "Studio", glyph: "⧉", kind: "plain" },
-  { key: "screen", name: "Screen", glyph: "▣", kind: "plain" },
-  { key: "timelapse", name: "Timelapse", glyph: "⧗", kind: "camera" },
-  { key: "clay", name: "Clay", glyph: "◐", kind: "camera" },
   { key: "scan", name: "Scan", glyph: "◫", kind: "camera" },
-  { key: "trace", name: "Trace", glyph: "◈", kind: "camera" },
+  { key: "library", name: "Library", glyph: "▦", kind: "plain" },
   { key: "attach", name: "Attachments", glyph: "⊕", kind: "plain" },
   { key: "tools", name: "Tools", glyph: "⚏", kind: "plain" },
-  { key: "library", name: "Library", glyph: "▦", kind: "plain" },
   { key: "settings", name: "Settings", glyph: "⚙", kind: "plain" },
 ];
 
@@ -50,13 +45,9 @@ const FREE_TABS = new Set(["capture", "library", "settings"]);
 
 function Screen({ tabKey, focused }: { tabKey: string; focused: boolean }) {
   switch (tabKey) {
-    case "capture": return <CaptureScreen focused={focused} />;
+    case "capture": return <CaptureHub focused={focused} />;
     case "studio": return <StudioScreen focused={focused} />;
-    case "screen": return <ScreenRecordScreen />;
-    case "timelapse": return <TimelapseScreen focused={focused} />;
-    case "clay": return <ClaymationScreen focused={focused} />;
     case "scan": return <RoomScanScreen focused={focused} />;
-    case "trace": return <TraceScreen focused={focused} />;
     case "attach": return <AttachmentsScreen focused={focused} />;
     case "tools": return <ToolsScreen />;
     case "library": return <LibraryScreen focused={focused} />;
@@ -176,8 +167,9 @@ function PaywallGate({ onOpenSettings }: { onOpenSettings: () => void }) {
       <Mark size={72} />
       <Text style={styles.gateTitle}>Part of the full toolkit</Text>
       <Text style={styles.gateText}>
-        Capture and Library are always free. Studio, Screen, Timelapse, Clay, Scan, Trace,
-        Attachments, and Tools are unlocked with a trial, subscription, or access code.
+        Photo, Video and Library are always free. Timelapse, Clay, Trace and Screen recording
+        inside Capture — plus Studio, Scan, Attachments and Tools — are unlocked with a trial,
+        subscription, or access code.
       </Text>
       {available ? (
         <Pressable onPress={buy} disabled={busy} style={[styles.gateBtn, busy && { opacity: 0.6 }]}>

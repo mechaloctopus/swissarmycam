@@ -390,7 +390,7 @@ const styles = StyleSheet.create({
   exportChip: { backgroundColor: C.go, borderRadius: 6, paddingHorizontal: 10, paddingVertical: 8, minWidth: 60, alignItems: "center" },
   note: { marginTop: 22, backgroundColor: C.surface, borderWidth: 1, borderColor: C.line, borderLeftWidth: 3, borderLeftColor: C.native, borderRadius: 8, padding: 16, gap: 8 },
   noteText: { color: C.inkMute, fontSize: 13, lineHeight: 19 },
-  viewport: { height: "48%", backgroundColor: "#000" },
+  viewport: { flex: 1, backgroundColor: "#000" },
   hud: { position: "absolute", top: 12, left: 14, right: 14, flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   recPill: { flexDirection: "row", alignItems: "center", gap: 7, backgroundColor: "rgba(0,0,0,0.5)", borderWidth: 1, borderColor: C.line, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 40 },
   onionSliderWrap: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 16, paddingVertical: 8, backgroundColor: C.bg2 },

@@ -31,7 +31,7 @@ export const TOUR_STEPS: TourStep[] = [
     target: "tab.capture",
     title: "Capture",
     body:
-      "Photo and video, with the controls a real camera gives you: grid, level, reticle, self-timer, torch and zoom. Analyze reads your last shot on-device — colour palette, text, and objects — without anything leaving the phone. Free forever.",
+      "Every way of pointing a camera at something lives here, on the mode rail along the bottom: Photo and Video (free forever), plus Timelapse, Clay stop-motion, AR Trace and Screen recording. Analyze reads your last shot on-device — palette, text and objects — without anything leaving the phone.",
   },
   {
     tab: "library",
@@ -48,37 +48,11 @@ export const TOUR_STEPS: TourStep[] = [
       "The keyframe video editor. Sequence clips, layer images, video and text over them, and keyframe position, scale, rotation and opacity with easing. Undo/redo, snapping and frame-stepping throughout. Import music or a voiceover on its own track, then export a real MP4 with everything baked in.",
   },
   {
-    tab: "trace",
-    target: "tab.trace",
-    title: "Trace",
-    body:
-      "Project a reference onto real paper or a wall and draw along it. Print the marker for a lock that holds to the millimetre, or tap Auto lock to track whatever texture is already on the surface. Lines mode shows just the edges so you can see your own pencil.",
-  },
-  {
-    tab: "clay",
-    target: "tab.clay",
-    title: "Clay",
-    body:
-      "Stop-motion. Onion skin ghosts up to three previous frames so you can judge spacing, and review mode sits you between frames to check the motion before you commit. Bakes to MP4.",
-  },
-  {
-    tab: "timelapse",
-    target: "tab.timelapse",
-    title: "Timelapse",
-    body: "Set an interval and let it run. Frames are saved as a set, then baked into a real MP4 at the frame rate you pick.",
-  },
-  {
     tab: "scan",
     target: "tab.scan",
     title: "Scan",
     body:
       "Guided multi-angle capture, plus cloud 3D reconstruction: hand it a short video and get back a Gaussian splat you can orbit, pan and zoom right here. This is the one feature that sends anything off your device, and only when you tap it.",
-  },
-  {
-    tab: "screen",
-    target: "tab.screen",
-    title: "Screen",
-    body: "System-wide screen recording through Android's own consent flow, with a persistent indicator the whole time it runs. Saves straight to Library.",
   },
   {
     tab: "tools",

@@ -136,7 +136,7 @@ function Stat({ k, v, accent }: { k: string; v: string; accent?: boolean }) {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: C.bg },
-  viewport: { height: "42%", backgroundColor: "#000" },
+  viewport: { flex: 1, backgroundColor: "#000" },
   hud: { position: "absolute", top: 12, left: 14, right: 14, flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   recPill: { flexDirection: "row", alignItems: "center", gap: 7, backgroundColor: "rgba(0,0,0,0.45)", borderWidth: 1, borderColor: C.line, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 40 },
   recDot: { width: 8, height: 8, borderRadius: 4 },

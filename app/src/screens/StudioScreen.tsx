@@ -94,6 +94,7 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
   const [canvas, setCanvas] = useState({ w: 0, h: 0 });
   const [tab, setTab] = useState<PanelTab>("layers");
   const [pps, setPps] = useState(60);
+  const [loop, setLoop] = useState(false);
   const [textModal, setTextModal] = useState(false);
   const [textInput, setTextInput] = useState("");
   const [toast, setToast] = useState<string | null>(null);
@@ -302,7 +303,9 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
   useEffect(() => {
     if (!activeClip) return;
     try {
-      player.playbackRate = activeClip.speed;
+      // Decoders reject extreme rates; the preview caps out while the export
+      // still bakes the clip's real speed.
+      player.playbackRate = Math.max(0.1, Math.min(8, activeClip.speed));
       player.preservesPitch = activeClip.preservePitch;
       player.muted = activeClip.muted;
     } catch {
@@ -320,9 +323,40 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
       setActiveIndex(activeIndex + 1);
       pendingSeek.current = next.trimIn;
     } else if (playing) {
-      player.pause();
+      if (loop) {
+        setActiveIndex(0);
+        pendingSeek.current = clips[0]?.trimIn ?? 0;
+      } else {
+        player.pause();
+      }
     }
-  }, [sourceTime, activeClip, activeIndex, clips, player, playing]);
+  }, [sourceTime, activeClip, activeIndex, clips, player, playing, loop]);
+
+  const atEnd = timelineDuration > 0 && timelineTime >= timelineDuration - 0.05;
+
+  /**
+   * Play from the top when the playhead is already parked at the end —
+   * otherwise the advance effect above pauses again on the next tick and the
+   * button looks dead.
+   */
+  const togglePlay = () => {
+    try {
+      if (playing) {
+        player.pause();
+        return;
+      }
+      if (atEnd) {
+        seekTimeline(0);
+        setTimeout(() => {
+          try { player.play(); } catch { /* source not ready */ }
+        }, 90);
+        return;
+      }
+      player.play();
+    } catch {
+      // a player whose source failed to attach; nothing to play
+    }
+  };
 
   // trimOut starts at 0 (unknown) and resolves once the player reports length.
   useEffect(() => {
@@ -735,8 +769,8 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
         <Pressable onPress={() => stepFrame(-1)} hitSlop={6} style={styles.stepBtn}>
           <Text style={styles.stepText}>−1f</Text>
         </Pressable>
-        <Pressable onPress={() => (playing ? player.pause() : player.play())} style={styles.playBtn}>
-          <Text style={{ color: "#fff", fontSize: 15 }}>{playing ? "❚❚" : "▶"}</Text>
+        <Pressable onPress={togglePlay} style={styles.playBtn}>
+          <Text style={{ color: "#fff", fontSize: 15 }}>{playing ? "❚❚" : atEnd ? "↺" : "▶"}</Text>
         </Pressable>
         <Pressable onPress={() => stepFrame(1)} hitSlop={6} style={styles.stepBtn}>
           <Text style={styles.stepText}>+1f</Text>
@@ -746,6 +780,9 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
         </Pressable>
         <Mono color={C.ink} size={11}>{timelineTime.toFixed(2)}s</Mono>
         <View style={{ flex: 1 }} />
+        <Pressable onPress={() => setLoop((v) => !v)} style={[styles.zoomBtn, loop && { backgroundColor: C.red, borderColor: C.red }]}>
+          <Text style={{ color: loop ? "#fff" : C.inkSoft, fontSize: 13 }}>⟲</Text>
+        </Pressable>
         <Pressable onPress={() => setPps((p) => Math.max(20, p / 1.5))} style={styles.zoomBtn}>
           <Text style={styles.zoomText}>−</Text>
         </Pressable>
@@ -1292,8 +1329,12 @@ function ClipPanel({
           )}
 
           <Text style={styles.groupLabel}>Speed</Text>
+          <Mono color={C.inkFaint} size={9.5}>
+            Above 8× the preview plays at 8× — decoders refuse extreme rates — but the export bakes
+            the real speed. At very high speeds a clip becomes a few frames long.
+          </Mono>
           <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>
-            {[0.25, 0.5, 1, 1.5, 2, 3, 4].map((sp) => (
+            {[0.25, 0.5, 1, 1.5, 2, 3, 4, 8, 16, 50, 200, 1000].map((sp) => (
               <Pressable key={sp} onPress={() => { onBegin(); onPatchClip(selected.id, { speed: sp }); }} style={[styles.speedChip, selected.speed === sp && styles.speedChipOn]}>
                 <Text style={{ color: selected.speed === sp ? "#fff" : C.inkSoft, fontFamily: F.mono, fontSize: 11 }}>{sp}×</Text>
               </Pressable>
