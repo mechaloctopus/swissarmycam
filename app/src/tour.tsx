@@ -45,7 +45,7 @@ export const TOUR_STEPS: TourStep[] = [
     target: "tab.studio",
     title: "Studio",
     body:
-      "The keyframe video editor. Sequence clips, layer images, video and text over them, and keyframe position, scale, rotation and opacity with easing. Undo/redo, snapping and frame-stepping throughout. Export bakes a real MP4.",
+      "The keyframe video editor. Sequence clips, layer images, video and text over them, and keyframe position, scale, rotation and opacity with easing. Undo/redo, snapping and frame-stepping throughout. Import music or a voiceover on its own track, then export a real MP4 with everything baked in.",
   },
   {
     tab: "trace",

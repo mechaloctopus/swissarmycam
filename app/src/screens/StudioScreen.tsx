@@ -681,6 +681,12 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
         }}
         onTapKeyframe={seekTimeline}
         onGestureStart={pushHistory}
+        audios={audios}
+        selectedAudioId={selectedAudio}
+        onSelectAudio={(id) => {
+          setSelectedAudio(id);
+          setTab("audio");
+        }}
         snapTargets={[timelineTime, ...starts.slice(1)]}
         onSnap={haptic}
       />

@@ -1,7 +1,7 @@
 import React, { useMemo, useRef } from "react";
-import { View, Text, StyleSheet, PanResponder, ScrollView } from "react-native";
+import { View, Text, StyleSheet, PanResponder, Pressable, ScrollView } from "react-native";
 import { C, F } from "../theme";
-import { Layer, snapTime } from "../timeline";
+import { Layer, AudioTrack, snapTime } from "../timeline";
 
 const RULER_H = 22;
 const LANE_H = 34;
@@ -12,6 +12,10 @@ export type TimelineProps = {
   duration: number;
   currentTime: number;
   layers: Layer[];
+  /** Imported audio tracks, drawn as their own lanes below the layer lanes. */
+  audios?: AudioTrack[];
+  selectedAudioId?: string | null;
+  onSelectAudio?: (id: string) => void;
   selectedId: string | null;
   /** Pixels per second. */
   pps: number;
@@ -42,6 +46,9 @@ export function Timeline({
   layers,
   selectedId,
   pps,
+  audios = [],
+  selectedAudioId = null,
+  onSelectAudio,
   onSeek,
   onSelect,
   onTrimLayer,
@@ -130,12 +137,38 @@ export function Timeline({
             ))
           )}
 
+          {/* AUDIO LANES — a track's real extent on the timeline, so "multi-track"
+              is something you can see rather than only configure. Fade ramps are
+              drawn to scale at each end. */}
+          {audios.map((a) => {
+            const span = Math.max(0.05, a.trimOut - a.trimIn);
+            const on = a.id === selectedAudioId;
+            return (
+              <Pressable
+                key={a.id}
+                onPress={() => onSelectAudio?.(a.id)}
+                style={[
+                  styles.audioLane,
+                  on && styles.audioLaneOn,
+                  { left: a.tIn * pps, width: Math.max(span * pps, 12) },
+                ]}
+              >
+                {a.fadeIn > 0 && <View style={[styles.fadeWedge, { left: 0, width: Math.min(a.fadeIn, span) * pps }]} />}
+                {a.fadeOut > 0 && <View style={[styles.fadeWedge, { right: 0, width: Math.min(a.fadeOut, span) * pps }]} />}
+                <Text numberOfLines={1} style={styles.audioLaneText}>♪ {a.name}</Text>
+              </Pressable>
+            );
+          })}
+
           {/* PLAYHEAD — drawn over everything, ignores touches so lanes stay usable */}
           <View
             pointerEvents="none"
             style={[
               styles.playhead,
-              { left: currentTime * pps, height: RULER_H + (Math.max(layers.length, 1) * (LANE_H + LANE_GAP)) },
+              {
+                left: currentTime * pps,
+                height: RULER_H + (Math.max(layers.length, 1) + audios.length) * (LANE_H + LANE_GAP),
+              },
             ]}
           />
         </View>
@@ -322,6 +355,20 @@ function formatTime(t: number): string {
 }
 
 const styles = StyleSheet.create({
+  audioLane: {
+    height: LANE_H,
+    marginBottom: LANE_GAP,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: C.lineStrong,
+    backgroundColor: "rgba(64,150,120,0.22)",
+    justifyContent: "center",
+    paddingHorizontal: 8,
+    overflow: "hidden",
+  },
+  audioLaneOn: { borderColor: C.go },
+  audioLaneText: { color: C.inkSoft, fontFamily: F.mono, fontSize: 10 },
+  fadeWedge: { position: "absolute", top: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.32)" },
   wrap: { backgroundColor: C.bg2, borderTopWidth: 1, borderTopColor: C.line, paddingVertical: 8 },
   ruler: { height: RULER_H, position: "relative", justifyContent: "flex-end" },
   tick: { position: "absolute", bottom: 0, alignItems: "flex-start" },

@@ -48,7 +48,7 @@ const CAPS: { name: string; level: string; tone: string }[] = [
   { name: "Screen recording audio source (standard / camcorder / raw-no-AI)", level: "Possible now", tone: C.go },
   { name: "Capture video mic-array selection / forced-off noise suppression", level: "Not exposed by expo-camera", tone: C.native },
   { name: "Manual ISO / shutter / RAW capture", level: "Requires native code", tone: C.native },
-  { name: "Input mic-gain / audio DSP", level: "Requires native code", tone: C.native },
+  { name: "Input mic-gain (the Settings slider is stored, not yet applied)", level: "Requires native code", tone: C.native },
   { name: "Guided in-app tour with live spotlight navigation", level: "Possible now", tone: C.go },
   { name: "Animated aperture boot sequence", level: "Possible now", tone: C.go },
   { name: "IR / thermal / UV", level: "Requires attachment", tone: C.attach },
@@ -237,11 +237,8 @@ export default function SettingsScreen({ focused }: { focused: boolean }) {
         <Row title="Microphone" hint="Record audio with video.">
           <Toggle value={settings.micEnabled} onChange={(v) => update({ micEnabled: v })} />
         </Row>
-        <Row title="Mic gain" hint={`${settings.micGain}% · input gain applies with the native audio pipeline (Phase 5)`}>
+        <Row title="Mic gain" hint={`${settings.micGain}% · saved, but not applied yet — Android's capture pipeline exposes no input-gain control, so this waits on a native audio path. See Capability map.`}>
           <Slider value={settings.micGain} min={0} max={100} step={5} onChange={(v) => update({ micGain: v })} width={130} />
-        </Row>
-        <Row title="Feedback volume" hint={`${settings.shutterVolume}% · shutter & UI cues`}>
-          <Slider value={settings.shutterVolume} min={0} max={100} step={10} onChange={(v) => update({ shutterVolume: v })} width={130} />
         </Row>
         <Row title="Screen recording audio" hint="Applies to Screen only — Capture's video pipeline has no audio-source control to apply this to (see Capability map).">
           <Segmented

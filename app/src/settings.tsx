@@ -38,7 +38,6 @@ export type Settings = {
   timerDefault: number; // 0 / 3 / 10
   autoSaveToPhotos: boolean;
   haptics: boolean;
-  shutterVolume: number; // 0–100 (feedback volume; stored)
   underwaterLock: boolean; // auto-lock touch input the moment recording starts
 
   // Timelapse
@@ -67,7 +66,6 @@ export const DEFAULTS: Settings = {
   timerDefault: 0,
   autoSaveToPhotos: false,
   haptics: true,
-  shutterVolume: 60,
   underwaterLock: false,
 
   tlInterval: 2,

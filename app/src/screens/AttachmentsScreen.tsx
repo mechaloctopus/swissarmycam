@@ -101,7 +101,7 @@ export default function AttachmentsScreen({ focused }: { focused: boolean }) {
             </View>
           ))}
           <Mono color={C.inkMute} size={10} style={{ paddingHorizontal: 2, marginTop: 2 }}>
-            Real Camera2 hardware data — read-only for now. Live manual capture using these ranges is Phase 3.
+            Real Camera2 hardware data, read straight from your device. Driving these ranges to take a manual exposure needs a native capture path and isn't built yet — see Settings → Capability map.
           </Mono>
         </View>
       )}
@@ -153,7 +153,7 @@ export default function AttachmentsScreen({ focused }: { focused: boolean }) {
         <Mono color={C.attach} size={10}>REQUIRES NATIVE CODE + HARDWARE</Mono>
         <Text style={styles.noteText}>
           USB-C thermal / IR / night-vision modules, UV illuminators, and Bluetooth shutters are
-          detected and driven by the native attachment module &amp; developer API — Phase 7. This
+          detected and driven by a native attachment module, which isn't built yet. This
           screen reads what the phone can report today; the ecosystem plugs in here.
         </Text>
       </View>
