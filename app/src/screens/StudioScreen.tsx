@@ -20,7 +20,7 @@ import { Label, Mono } from "../components/ui";
 import { Slider, Segmented } from "../components/controls";
 import { Timeline } from "../components/Timeline";
 import { listMedia, newVideoOutputPath } from "../store";
-import { pickImageFromLibrary, pickVideoFromLibrary, saveToPhotos } from "../media";
+import { pickImageFromLibrary, pickVideoFromLibrary, pickAudioFile, saveToPhotos } from "../media";
 import { useSettings } from "../settings";
 import { isVideoExportAvailable, exportTimeline } from "video-exporter";
 import {
@@ -47,12 +47,14 @@ import {
   snapTime,
   serializeLayers,
   serializeClips,
+  serializeAudios,
+  AudioTrack,
   IMAGE_BOX,
   VIDEO_BOX_W,
   VIDEO_BOX_H,
 } from "../timeline";
 
-type PanelTab = "layers" | "animate" | "clip";
+type PanelTab = "layers" | "animate" | "clip" | "audio";
 
 let seq = 0;
 const nextId = () => `L${++seq}`;
@@ -68,6 +70,8 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
   const { settings } = useSettings();
   const [videos, setVideos] = useState<string[]>([]);
   const [clips, setClips] = useState<BaseClip[]>([]);
+  const [audios, setAudios] = useState<AudioTrack[]>([]);
+  const [selectedAudio, setSelectedAudio] = useState<string | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [layers, setLayers] = useState<Layer[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -85,7 +89,7 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
   // ---- undo/redo -------------------------------------------------------
   // Snapshots of {clips, layers}. Every object inside is treated immutably
   // everywhere in this file, so shallow array copies are safe snapshots.
-  type Snapshot = { clips: BaseClip[]; layers: Layer[] };
+  type Snapshot = { clips: BaseClip[]; layers: Layer[]; audios?: AudioTrack[] };
   const undoStack = useRef<Snapshot[]>([]);
   const redoStack = useRef<Snapshot[]>([]);
   const [historyVersion, setHistoryVersion] = useState(0); // re-render for button states
@@ -93,7 +97,11 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
 
   /** Call BEFORE a mutation (or once at gesture start) to make it undoable. */
   const pushHistory = useCallback(() => {
-    undoStack.current.push({ clips: [...stateRef.current.clips], layers: [...stateRef.current.layers] });
+    undoStack.current.push({
+      clips: [...stateRef.current.clips],
+      layers: [...stateRef.current.layers],
+      audios: [...(stateRef.current.audios ?? [])],
+    });
     if (undoStack.current.length > 60) undoStack.current.shift();
     redoStack.current = [];
     setHistoryVersion((v) => v + 1);
@@ -102,18 +110,28 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
   const undo = useCallback(() => {
     const prev = undoStack.current.pop();
     if (!prev) return;
-    redoStack.current.push({ clips: [...stateRef.current.clips], layers: [...stateRef.current.layers] });
+    redoStack.current.push({
+      clips: [...stateRef.current.clips],
+      layers: [...stateRef.current.layers],
+      audios: [...(stateRef.current.audios ?? [])],
+    });
     setClips(prev.clips);
     setLayers(prev.layers);
+    setAudios(prev.audios ?? []);
     setHistoryVersion((v) => v + 1);
   }, []);
 
   const redo = useCallback(() => {
     const next = redoStack.current.pop();
     if (!next) return;
-    undoStack.current.push({ clips: [...stateRef.current.clips], layers: [...stateRef.current.layers] });
+    undoStack.current.push({
+      clips: [...stateRef.current.clips],
+      layers: [...stateRef.current.layers],
+      audios: [...(stateRef.current.audios ?? [])],
+    });
     setClips(next.clips);
     setLayers(next.layers);
+    setAudios(next.audios ?? []);
     setHistoryVersion((v) => v + 1);
   }, []);
 
@@ -242,7 +260,7 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
 
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
-  stateRef.current = { clips, layers };
+  stateRef.current = { clips, layers, audios };
 
   // Autosave the project (debounced) so closing the app never loses an edit.
   useEffect(() => {
@@ -263,6 +281,7 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
     seq = Math.max(seq, maxN);
     setClips(savedProject.clips);
     setLayers(savedProject.layers);
+    setAudios(savedProject.audios ?? []);
     setActiveIndex(0);
     setTab("layers");
   };
@@ -450,7 +469,7 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
     setExporting(true);
     try {
       const { uri, path } = await newVideoOutputPath();
-      await exportTimeline(path, serializeLayers(layers), serializeClips(clips), canvas.w, canvas.h);
+      await exportTimeline(path, serializeLayers(layers), serializeClips(clips), canvas.w, canvas.h, serializeAudios(audios));
       flash("Exported to Library");
       if (settings.autoSaveToPhotos) saveToPhotos(uri);
       loadVideos();
@@ -459,6 +478,39 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
     } finally {
       setExporting(false);
     }
+  };
+
+  // ----------------------------------------------------------------- audio --
+  const addAudio = async () => {
+    const picked = await pickAudioFile();
+    if (!picked) return;
+    pushHistory();
+    // Length is unknown until the native decoder opens it, so start with a
+    // generous window: the export truncates to whatever the file really holds,
+    // and the trim sliders below let you tighten it.
+    const track: AudioTrack = {
+      id: `A${++seq}`,
+      uri: picked.uri,
+      name: picked.name,
+      tIn: 0,
+      trimIn: 0,
+      trimOut: Math.max(10, timelineDuration),
+      gain: 1,
+      fadeIn: 0.25,
+      fadeOut: 0.5,
+    };
+    setAudios((a) => [...a, track]);
+    setSelectedAudio(track.id);
+    haptic();
+  };
+
+  const patchAudio = (id: string, patch: Partial<AudioTrack>) =>
+    setAudios((list) => list.map((a) => (a.id === id ? { ...a, ...patch } : a)));
+
+  const removeAudio = (id: string) => {
+    pushHistory();
+    setAudios((list) => list.filter((a) => a.id !== id));
+    if (selectedAudio === id) setSelectedAudio(null);
   };
 
   // ---------------------------------------------------------------- picker --
@@ -634,10 +686,10 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
       />
 
       <View style={styles.tabRow}>
-        {(["layers", "animate", "clip"] as PanelTab[]).map((tk) => (
+        {(["layers", "animate", "clip", "audio"] as PanelTab[]).map((tk) => (
           <Pressable key={tk} onPress={() => setTab(tk)} style={[styles.tabBtn, tab === tk && styles.tabBtnOn]}>
             <Text style={[styles.tabBtnText, tab === tk && { color: "#fff" }]}>
-              {tk === "layers" ? "Layers" : tk === "animate" ? "Animate" : "Clip"}
+              {tk === "layers" ? "Layers" : tk === "animate" ? "Animate" : tk === "clip" ? "Clip" : "Audio"}
             </Text>
           </Pressable>
         ))}
@@ -744,6 +796,58 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
             onMoveClip={moveClip}
             onAppendClip={appendClip}
           />
+        )}
+
+        {tab === "audio" && (
+          <View style={{ gap: 10 }}>
+            <Pressable onPress={addAudio} style={styles.audioAddBtn}>
+              <Mono color="#fff" size={11}>♪  Add music or voiceover</Mono>
+            </Pressable>
+            {audios.length === 0 ? (
+              <Mono color={C.inkFaint} size={11}>
+                Imported tracks mix over the whole timeline alongside your clips' own audio. Mute a
+                clip in the Clip tab if you want only the music.
+              </Mono>
+            ) : (
+              audios.map((a) => {
+                const on = selectedAudio === a.id;
+                return (
+                  <View key={a.id} style={[styles.audioCard, on && styles.audioCardOn]}>
+                    <Pressable onPress={() => setSelectedAudio(on ? null : a.id)} style={styles.audioHead}>
+                      <Text style={[styles.audioName, { color: on ? C.ink : C.inkSoft }]} numberOfLines={1}>
+                        ♪ {a.name}
+                      </Text>
+                      <Pressable onPress={() => removeAudio(a.id)} hitSlop={8}>
+                        <Mono color={C.red} size={11}>remove</Mono>
+                      </Pressable>
+                    </Pressable>
+                    {on && (
+                      <View style={{ gap: 6, marginTop: 8 }}>
+                        <Ctrl label={`Start · ${a.tIn.toFixed(2)}s`}>
+                          <Slider onBegin={pushHistory} value={a.tIn} min={0} max={Math.max(1, timelineDuration)} step={0.05} onChange={(v) => patchAudio(a.id, { tIn: v })} width={132} />
+                        </Ctrl>
+                        <Ctrl label={`Volume · ${Math.round(a.gain * 100)}%`}>
+                          <Slider onBegin={pushHistory} value={Math.round(a.gain * 100)} min={0} max={200} step={5} onChange={(v) => patchAudio(a.id, { gain: v / 100 })} width={132} />
+                        </Ctrl>
+                        <Ctrl label={`Trim in · ${a.trimIn.toFixed(2)}s`}>
+                          <Slider onBegin={pushHistory} value={a.trimIn} min={0} max={Math.max(0.1, a.trimOut - 0.1)} step={0.05} onChange={(v) => patchAudio(a.id, { trimIn: v })} width={132} />
+                        </Ctrl>
+                        <Ctrl label={`Trim out · ${a.trimOut.toFixed(2)}s`}>
+                          <Slider onBegin={pushHistory} value={a.trimOut} min={a.trimIn + 0.1} max={Math.max(a.trimIn + 1, 600)} step={0.5} onChange={(v) => patchAudio(a.id, { trimOut: v })} width={132} />
+                        </Ctrl>
+                        <Ctrl label={`Fade in · ${a.fadeIn.toFixed(2)}s`}>
+                          <Slider onBegin={pushHistory} value={a.fadeIn} min={0} max={8} step={0.25} onChange={(v) => patchAudio(a.id, { fadeIn: v })} width={132} />
+                        </Ctrl>
+                        <Ctrl label={`Fade out · ${a.fadeOut.toFixed(2)}s`}>
+                          <Slider onBegin={pushHistory} value={a.fadeOut} min={0} max={8} step={0.25} onChange={(v) => patchAudio(a.id, { fadeOut: v })} width={132} />
+                        </Ctrl>
+                      </View>
+                    )}
+                  </View>
+                );
+              })
+            )}
+          </View>
         )}
       </ScrollView>
 
@@ -1276,6 +1380,11 @@ function Toast({ msg }: { msg: string }) {
 }
 
 const styles = StyleSheet.create({
+  audioCard: { backgroundColor: C.surface, borderWidth: 1, borderColor: C.line, borderRadius: 10, padding: 10 },
+  audioCardOn: { borderColor: C.red },
+  audioHead: { flexDirection: "row", alignItems: "center", gap: 10 },
+  audioName: { flex: 1, fontFamily: F.mono, fontSize: 11.5 },
+  audioAddBtn: { paddingVertical: 13, borderRadius: 8, backgroundColor: C.red, alignItems: "center" },
   root: { flex: 1, backgroundColor: C.bg },
   head: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 16, paddingTop: 12, paddingBottom: 10 },
   title: { color: C.ink, fontFamily: F.sansMed, fontSize: 22, fontWeight: "700", marginTop: 6 },

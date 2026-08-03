@@ -161,6 +161,40 @@ export function makeClip(uri: string, id: string): BaseClip {
 }
 
 /** Serializes the clip sequence for the native exporter. Matches ClipParser.kt. */
+/**
+ * An imported audio track — music or voiceover. Unlike a clip it floats freely
+ * on the timeline, so it carries its own start time as well as source trims.
+ */
+export type AudioTrack = {
+  id: string;
+  uri: string;
+  name: string;
+  /** Timeline seconds where playback starts. */
+  tIn: number;
+  /** Source in/out points, in source seconds. */
+  trimIn: number;
+  trimOut: number;
+  /** Linear gain, 1 = unity. */
+  gain: number;
+  fadeIn: number;
+  fadeOut: number;
+};
+
+/** Field names here must match LayerParser.parseAudios in OverlayLayer.kt. */
+export function serializeAudios(audios: AudioTrack[]): string {
+  return JSON.stringify(
+    audios.map((a) => ({
+      uri: a.uri,
+      tIn: a.tIn,
+      trimIn: a.trimIn,
+      trimOut: a.trimOut,
+      gain: a.gain,
+      fadeIn: a.fadeIn,
+      fadeOut: a.fadeOut,
+    }))
+  );
+}
+
 export function serializeClips(clips: BaseClip[]): string {
   return JSON.stringify(
     clips.map((c) => ({

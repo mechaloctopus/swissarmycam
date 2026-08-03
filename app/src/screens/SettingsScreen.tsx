@@ -24,6 +24,7 @@ const CAPS: { name: string; level: string; tone: string }[] = [
   { name: "Clip trim + speed 0.25x-4x (video)", level: "Possible now", tone: C.go },
   { name: "Multi-clip sequence + dip-to-black transitions", level: "Possible now", tone: C.go },
   { name: "Crossfade transition (two clips visible at once)", level: "Not built yet", tone: C.native },
+  { name: "Imported audio tracks — music/voiceover, mixed into the export", level: "Possible now", tone: C.go },
   { name: "Speed-changed export audio (resample / WSOLA time-stretch)", level: "Possible now", tone: C.go },
   { name: "Screen recording (system-wide, MediaProjection)", level: "Possible now", tone: C.go },
   { name: "Frame-accurate video export (MediaCodec + GLES bake)", level: "Possible now", tone: C.go },

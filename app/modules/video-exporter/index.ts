@@ -7,7 +7,8 @@ type NativeVideoExporterModule = {
     layersJson: string,
     canvasWidth: number,
     canvasHeight: number,
-    clipsJson: string
+    clipsJson: string,
+    audiosJson: string
   ): Promise<string>;
   exportImageSequence(urisJson: string, fps: number, outputPath: string): Promise<string>;
 };
@@ -38,7 +39,8 @@ export function isVideoExportAvailable(): boolean {
  * capture. Every layer is drawn at its interpolated keyframe pose for that
  * frame's exact timestamp, respecting its in/out window and fades.
  *
- * `layersJson` and `clipsJson` must come from serializeLayers()/serializeClips()
+ * `layersJson`, `clipsJson` and `audiosJson` must come from
+ * serializeLayers()/serializeClips()/serializeAudios()
  * in src/timeline.ts so the field names line up with LayerParser.kt. Clips play
  * back to back, each with its own trim/speed and optional dip transition. `canvasWidth`/`canvasHeight` are the
  * on-screen preview size the keyframes were authored against, so the native
@@ -51,11 +53,12 @@ export async function exportTimeline(
   layersJson: string,
   clipsJson: string,
   canvasWidth: number,
-  canvasHeight: number
+  canvasHeight: number,
+  audiosJson: string = "[]"
 ): Promise<string> {
   const mod = getNative();
   if (!mod) throw new Error("Video export is not available on this build");
-  return mod.exportVideo(outputPath, layersJson, Math.round(canvasWidth), Math.round(canvasHeight), clipsJson);
+  return mod.exportVideo(outputPath, layersJson, Math.round(canvasWidth), Math.round(canvasHeight), clipsJson, audiosJson);
 }
 
 /**

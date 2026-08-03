@@ -37,10 +37,12 @@ class VideoExportEngine(private val context: Context) {
     layersJson: String,
     canvasWidth: Int,
     canvasHeight: Int,
-    clipsJson: String
+    clipsJson: String,
+    audiosJson: String
   ) {
     val layers = LayerParser.parse(layersJson)
     val clips = LayerParser.parseClips(clipsJson)
+    val audios = LayerParser.parseAudios(audiosJson)
     require(clips.isNotEmpty()) { "No clips to export" }
 
     // Output geometry comes from the first clip; later clips of a different
@@ -73,7 +75,7 @@ class VideoExportEngine(private val context: Context) {
     val passthroughOk = audioProbes.isNotEmpty() && !anyRetimed &&
       audioProbes.all { audioFormatMatches(it, audioProbes[0]) }
     val preRendered: AudioRenderer.Result? = if (audioProbes.isEmpty() || passthroughOk) null else try {
-      AudioRenderer.render(clips)
+      AudioRenderer.render(clips, audios)
     } catch (e: Exception) {
       null
     }

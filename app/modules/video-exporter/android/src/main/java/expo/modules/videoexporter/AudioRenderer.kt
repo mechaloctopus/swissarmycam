@@ -28,7 +28,30 @@ object AudioRenderer {
   class Packet(val data: ByteArray, val ptsUs: Long, val flags: Int)
   class Result(val format: MediaFormat, val packets: List<Packet>)
 
-  fun render(clips: List<ExportClip>): Result? {
+  /**
+   * A decoded audio track waiting to be summed into the timeline, already at
+   * the output rate and channel count so mixing is a plain add.
+   */
+  private class MixSource(
+    val pcm: ShortArray,
+    val startFrame: Long,
+    val frames: Long,
+    val gain: Float,
+    val fadeInFrames: Long,
+    val fadeOutFrames: Long
+  ) {
+    fun gainAt(f: Long): Float {
+      var g = gain
+      if (fadeInFrames > 0 && f < fadeInFrames) g *= f.toFloat() / fadeInFrames
+      val fromEnd = frames - 1 - f
+      if (fadeOutFrames > 0 && fromEnd < fadeOutFrames) {
+        g *= (fromEnd.toFloat() / fadeOutFrames).coerceAtLeast(0f)
+      }
+      return g
+    }
+  }
+
+  fun render(clips: List<ExportClip>, audios: List<ExportAudio> = emptyList()): Result? {
     // Output rate/channels come from the first clip that has any audio.
     var outRate = 0
     var outCh = 0
@@ -43,7 +66,24 @@ object AudioRenderer {
       ex.release()
       if (outRate > 0) break
     }
+    // A silent video with a music track still needs a track rendered, so fall
+    // back to the first audio layer's geometry when no clip has any sound.
+    if (outRate <= 0) {
+      for (a in audios) {
+        val ex = MediaExtractor().apply { setDataSource(a.uri) }
+        val t = findAudioTrack(ex)
+        if (t >= 0) {
+          val f = ex.getTrackFormat(t)
+          outRate = f.getInteger(MediaFormat.KEY_SAMPLE_RATE)
+          outCh = f.getInteger(MediaFormat.KEY_CHANNEL_COUNT).coerceIn(1, 2)
+        }
+        ex.release()
+        if (outRate > 0) break
+      }
+    }
     if (outRate <= 0) return null // nothing anywhere to render
+
+    val sources = audios.mapNotNull { decodeSource(it, outRate, outCh) }
 
     val encFormat = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, outRate, outCh).apply {
       setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
@@ -117,8 +157,15 @@ object AudioRenderer {
     }
 
     val chunkOut = mutableListOf<Short>()
+    // Global frame index of the start of chunkOut. Every sample in the export
+    // — decoded clip audio and synthesized padding alike — passes through here,
+    // so mixing at this one point covers the whole timeline including the gaps,
+    // and stays aligned by sample count rather than timestamps.
+    var mixFrame = 0L
     fun flushChunk() {
       if (chunkOut.isEmpty()) return
+      mixInto(chunkOut, mixFrame, outCh, sources)
+      mixFrame += chunkOut.size / outCh
       for (s in chunkOut) pendingPcm.addLast(s)
       chunkOut.clear()
       feedEncoder(false)
@@ -152,6 +199,61 @@ object AudioRenderer {
     val fmt = outFormat ?: return null
     if (packets.isEmpty()) return null
     return Result(fmt, packets)
+  }
+
+  /** Sums each overlapping audio track into this chunk of timeline PCM. */
+  private fun mixInto(chunk: MutableList<Short>, chunkStartFrame: Long, outCh: Int, sources: List<MixSource>) {
+    if (sources.isEmpty()) return
+    val frames = (chunk.size / outCh).toLong()
+    for (src in sources) {
+      val from = maxOf(chunkStartFrame, src.startFrame)
+      val to = minOf(chunkStartFrame + frames, src.startFrame + src.frames)
+      if (to <= from) continue
+      for (f in from until to) {
+        val g = src.gainAt(f - src.startFrame)
+        if (g <= 0f) continue
+        val ci = ((f - chunkStartFrame) * outCh).toInt()
+        val si = ((f - src.startFrame) * outCh).toInt()
+        for (c in 0 until outCh) {
+          // Hard clip: gain is the user's to control, and silently attenuating
+          // the whole mix to avoid it would be a stranger surprise than
+          // clipping a track they pushed too loud.
+          val sum = chunk[ci + c].toInt() + (src.pcm[si + c] * g).toInt()
+          chunk[ci + c] = sum.coerceIn(-32768, 32767).toShort()
+        }
+      }
+    }
+  }
+
+  /**
+   * Decodes an imported track to PCM at the output geometry, by running it
+   * through the very same decode path clips use at speed 1.0 — that path
+   * already channel-converts and resamples, so there is no second decoder to
+   * keep in sync with this one.
+   */
+  private fun decodeSource(a: ExportAudio, outRate: Int, outCh: Int): MixSource? {
+    val span = (a.trimOut - a.trimIn).coerceAtLeast(0.0)
+    if (span <= 0.0) return null
+    val expected = (span * outRate).toLong()
+    if (expected <= 0L) return null
+
+    val collected = mutableListOf<Short>()
+    val asClip = ExportClip(a.uri, a.trimIn, a.trimOut, 1.0, false, false, "none", 0.0)
+    val emitted = try {
+      decodeAndRetime(asClip, outRate, outCh, expected, collected) { }
+    } catch (e: Exception) {
+      0L // a track that will not decode is dropped; the export still succeeds
+    }
+    if (emitted <= 0L || collected.isEmpty()) return null
+
+    return MixSource(
+      pcm = collected.toShortArray(),
+      startFrame = (a.tIn * outRate).toLong().coerceAtLeast(0L),
+      frames = (collected.size / outCh).toLong(),
+      gain = a.gain,
+      fadeInFrames = (a.fadeIn * outRate).toLong(),
+      fadeOutFrames = (a.fadeOut * outRate).toLong()
+    )
   }
 
   /**

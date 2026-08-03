@@ -12,10 +12,10 @@ class VideoExporterModule : Module() {
 
     Function("isAvailable") { true }
 
-    AsyncFunction("exportVideo") { outputPath: String, layersJson: String, canvasWidth: Int, canvasHeight: Int, clipsJson: String, promise: Promise ->
+    AsyncFunction("exportVideo") { outputPath: String, layersJson: String, canvasWidth: Int, canvasHeight: Int, clipsJson: String, audiosJson: String, promise: Promise ->
       try {
         val context = appContext.reactContext ?: throw Exceptions.ReactContextLost()
-        VideoExportEngine(context).export(outputPath, layersJson, canvasWidth, canvasHeight, clipsJson)
+        VideoExportEngine(context).export(outputPath, layersJson, canvasWidth, canvasHeight, clipsJson, audiosJson)
         promise.resolve(outputPath)
       } catch (e: Exception) {
         promise.reject("EXPORT_FAILED", e.message ?: "Video export failed", e)

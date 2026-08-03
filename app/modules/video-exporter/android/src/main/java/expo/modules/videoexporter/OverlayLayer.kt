@@ -57,6 +57,21 @@ data class ExportClip(
   }
 }
 
+/**
+ * One imported audio track, mirroring AudioTrack in src/timeline.ts. Unlike a
+ * clip it has a free timeline position, so it carries tIn as well as trims.
+ */
+data class ExportAudio(
+  val uri: String,
+  /** Timeline seconds where this track starts. */
+  val tIn: Double,
+  val trimIn: Double,
+  val trimOut: Double,
+  val gain: Float,
+  val fadeIn: Double,
+  val fadeOut: Double
+)
+
 /** The preview's on-screen footprint for each layer kind — must match src/timeline.ts. */
 const val IMAGE_LAYER_BOX = 120f
 const val VIDEO_LAYER_BOX_W = 160f
@@ -138,6 +153,28 @@ object LayerParser {
    * timeline time `t`, from dip transitions on either side of each cut. Half
    * the transition rides on each clip so the blackest point is the cut itself.
    */
+  fun parseAudios(json: String): List<ExportAudio> {
+    val arr = JSONArray(json)
+    val out = mutableListOf<ExportAudio>()
+    for (i in 0 until arr.length()) {
+      val o = arr.optJSONObject(i) ?: continue
+      val uri = o.optString("uri", "")
+      if (uri.isEmpty()) continue
+      out.add(
+        ExportAudio(
+          uri = uri,
+          tIn = o.optDouble("tIn", 0.0).coerceAtLeast(0.0),
+          trimIn = o.optDouble("trimIn", 0.0).coerceAtLeast(0.0),
+          trimOut = o.optDouble("trimOut", 0.0),
+          gain = o.optDouble("gain", 1.0).toFloat().coerceIn(0f, 4f),
+          fadeIn = o.optDouble("fadeIn", 0.0).coerceAtLeast(0.0),
+          fadeOut = o.optDouble("fadeOut", 0.0).coerceAtLeast(0.0)
+        )
+      )
+    }
+    return out
+  }
+
   fun dipAmountAt(clips: List<ExportClip>, clipStartsUs: LongArray, t: Double): Float {
     var dip = 0.0
     for (i in 1 until clips.size) {

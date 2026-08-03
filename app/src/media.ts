@@ -1,6 +1,7 @@
 import * as MediaLibrary from "expo-media-library";
 import * as Sharing from "expo-sharing";
 import * as ImagePicker from "expo-image-picker";
+import * as DocumentPicker from "expo-document-picker";
 
 /**
  * Explicit "Save to Photos". Best-effort: if the user hasn't granted the
@@ -55,6 +56,23 @@ export async function pickImageFromLibrary(): Promise<string | null> {
  * Import a video from the device's photo library — e.g. a green-screen clip
  * to key and overlay in the Editor. Returns null if cancelled or denied.
  */
+/**
+ * Picks an audio file for the editor's audio tracks. Copied into the cache so
+ * we hand the native side a real file:// path — MediaExtractor cannot open a
+ * bare content:// URI by string.
+ */
+export async function pickAudioFile(): Promise<{ uri: string; name: string } | null> {
+  const res = await DocumentPicker.getDocumentAsync({
+    type: "audio/*",
+    copyToCacheDirectory: true,
+    multiple: false,
+  });
+  if (res.canceled) return null;
+  const a = res.assets?.[0];
+  if (!a?.uri) return null;
+  return { uri: a.uri, name: a.name ?? "Audio" };
+}
+
 export async function pickVideoFromLibrary(): Promise<string | null> {
   try {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
