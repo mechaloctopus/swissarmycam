@@ -80,20 +80,30 @@ export function Timeline({
     });
   };
 
+  // The responder below is created once, so it must not close over pps,
+  // duration or onSeek directly — it would pin them to their first-render
+  // values (duration starts at 0.1), which is why scrubbing landed nowhere.
+  const live = useRef({ pps, safeDuration, onSeek });
+  live.current = { pps, safeDuration, onSeek };
+
   const emitSeek = (pageX: number) => {
+    const { pps: p, safeDuration: d, onSeek: seek } = live.current;
     // measureInWindow may not have landed yet, and pps can arrive as 0 on the
     // very first layout pass — both produce NaN/Infinity here, which is fatal
     // once it reaches the native player.
-    if (!Number.isFinite(pageX) || !Number.isFinite(pps) || pps <= 0) return;
-    const t = (pageX - scrubGeo.current.x) / pps;
+    if (!Number.isFinite(pageX) || !Number.isFinite(p) || p <= 0) return;
+    const t = (pageX - scrubGeo.current.x) / p;
     if (!Number.isFinite(t)) return;
-    onSeek(Math.max(0, Math.min(safeDuration, t)));
+    seek(Math.max(0, Math.min(d, t)));
   };
 
   const scrub = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
+      // The ruler owns its drags; the ScrollView keeps everything else, so you
+      // can still fling the timeline sideways by dragging the lane area.
+      onPanResponderTerminationRequest: () => false,
       onPanResponderGrant: (e) => {
         measureScrub();
         // measureInWindow is async — use the touch's own page origin for the
@@ -213,12 +223,21 @@ function Lane({
   const startRef = useRef({ tIn: layer.tIn, tOut: layer.tOut });
   const wasSnapped = useRef(false);
 
+  // Same trap as the canvas sprite, and the reason dragging a clip or a
+  // keyframe did nothing: these responders were rebuilt on every render, and
+  // each drag re-renders, so a fresh PanResponder arrived mid-gesture with a
+  // fresh gestureState and g.dx snapped back to ~0. They are created once now
+  // and read everything current through this ref.
+  const live = useRef({ layer, pps, duration, onTrim, onMoveKeyframe, onTapKeyframe, onGestureStart, onSelect, snapTargets, onSnap });
+  live.current = { layer, pps, duration, onTrim, onMoveKeyframe, onTapKeyframe, onGestureStart, onSelect, snapTargets, onSnap };
+
   // Snap to the playhead/cuts plus every whole second; ~8px of grab range.
   const applySnap = (t: number): number => {
-    const targets = [...(snapTargets ?? [])];
-    for (let sec = 0; sec <= duration + 0.001; sec++) targets.push(sec);
-    const r = snapTime(t, targets, 8 / pps);
-    if (r.snapped && !wasSnapped.current) onSnap?.();
+    const cur = live.current;
+    const targets = [...(cur.snapTargets ?? [])];
+    for (let sec = 0; sec <= cur.duration + 0.001; sec++) targets.push(sec);
+    const r = snapTime(t, targets, 8 / cur.pps);
+    if (r.snapped && !wasSnapped.current) cur.onSnap?.();
     wasSnapped.current = r.snapped;
     return r.t;
   };
@@ -227,46 +246,54 @@ function Lane({
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
+      onPanResponderTerminationRequest: () => false,
       onPanResponderGrant: () => {
-        onGestureStart?.();
-        onSelect(layer.id);
-        startRef.current = { tIn: layer.tIn, tOut: layer.tOut };
+        const cur = live.current;
+        cur.onGestureStart?.();
+        cur.onSelect(cur.layer.id);
+        startRef.current = { tIn: cur.layer.tIn, tOut: cur.layer.tOut };
         wasSnapped.current = false;
       },
       onPanResponderMove: (_e, g) => {
-        const dt = g.dx / pps;
+        const cur = live.current;
+        const dt = g.dx / cur.pps;
         if (edge === "in") {
           const next = applySnap(Math.max(0, Math.min(startRef.current.tOut - 0.1, startRef.current.tIn + dt)));
-          onTrim(layer.id, Math.min(next, startRef.current.tOut - 0.1), startRef.current.tOut);
+          cur.onTrim(cur.layer.id, Math.min(next, startRef.current.tOut - 0.1), startRef.current.tOut);
         } else {
-          const next = applySnap(Math.min(duration, Math.max(startRef.current.tIn + 0.1, startRef.current.tOut + dt)));
-          onTrim(layer.id, startRef.current.tIn, Math.max(next, startRef.current.tIn + 0.1));
+          const next = applySnap(Math.min(cur.duration, Math.max(startRef.current.tIn + 0.1, startRef.current.tOut + dt)));
+          cur.onTrim(cur.layer.id, startRef.current.tIn, Math.max(next, startRef.current.tIn + 0.1));
         }
       },
     });
 
-  // Recreated per render so the responders always read current tIn/tOut —
-  // memoizing these in a ref is the classic stale-closure trap here.
-  const trimIn = makeTrimResponder("in");
-  const trimOut = makeTrimResponder("out");
+  const trimIn = useRef(makeTrimResponder("in")).current;
+  const trimOut = useRef(makeTrimResponder("out")).current;
 
   const bodyStart = useRef({ tIn: layer.tIn, tOut: layer.tOut });
-  const body = PanResponder.create({
-    onStartShouldSetPanResponder: () => true,
-    onMoveShouldSetPanResponder: (_e, g) => Math.abs(g.dx) > 3,
-    onPanResponderGrant: () => {
-      onGestureStart?.();
-      onSelect(layer.id);
-      bodyStart.current = { tIn: layer.tIn, tOut: layer.tOut };
-    },
-    onPanResponderMove: (_e, g) => {
-      const dt = g.dx / pps;
-      const span = bodyStart.current.tOut - bodyStart.current.tIn;
-      let nextIn = bodyStart.current.tIn + dt;
-      nextIn = Math.max(0, Math.min(duration - span, nextIn));
-      onTrim(layer.id, nextIn, nextIn + span);
-    },
-  });
+  const body = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      // Only claim once it is clearly a horizontal drag, so a vertical swipe or
+      // a sideways fling on the lane still scrolls the timeline.
+      onMoveShouldSetPanResponder: (_e, g) => Math.abs(g.dx) > 6 && Math.abs(g.dx) > Math.abs(g.dy),
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderGrant: () => {
+        const cur = live.current;
+        cur.onGestureStart?.();
+        cur.onSelect(cur.layer.id);
+        bodyStart.current = { tIn: cur.layer.tIn, tOut: cur.layer.tOut };
+      },
+      onPanResponderMove: (_e, g) => {
+        const cur = live.current;
+        const dt = g.dx / cur.pps;
+        const span = bodyStart.current.tOut - bodyStart.current.tIn;
+        let nextIn = bodyStart.current.tIn + dt;
+        nextIn = Math.max(0, Math.min(cur.duration - span, nextIn));
+        cur.onTrim(cur.layer.id, nextIn, nextIn + span);
+      },
+    })
+  ).current;
 
   return (
     <View style={styles.lane}>
@@ -320,23 +347,33 @@ function KeyframeDot({
   onDragEnd: (to: number) => void;
 }) {
   const moved = useRef(false);
-  const pan = PanResponder.create({
-    onStartShouldSetPanResponder: () => true,
-    // Only claim the gesture once it's clearly a horizontal drag, so a plain
-    // tap still reaches onTap and a vertical scroll still reaches the list.
-    onMoveShouldSetPanResponder: (_e, g) => Math.abs(g.dx) > 4,
-    onPanResponderGrant: () => {
-      moved.current = false;
-    },
-    onPanResponderMove: () => {
-      if (!moved.current) onDragStart?.();
-      moved.current = true;
-    },
-    onPanResponderRelease: (_e, g) => {
-      if (moved.current) onDragEnd(Math.max(0, t + g.dx / pps));
-      else onTap();
-    },
-  });
+  // Built once for the same reason as the lane and the sprite — dragging a dot
+  // retimes a keyframe, which re-renders, which would otherwise hand the
+  // gesture a brand-new PanResponder with dx back at zero.
+  const live = useRef({ t, pps, onTap, onDragStart, onDragEnd });
+  live.current = { t, pps, onTap, onDragStart, onDragEnd };
+
+  const pan = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      // Only claim the gesture once it's clearly a horizontal drag, so a plain
+      // tap still reaches onTap and a vertical scroll still reaches the list.
+      onMoveShouldSetPanResponder: (_e, g) => Math.abs(g.dx) > 4,
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderGrant: () => {
+        moved.current = false;
+      },
+      onPanResponderMove: () => {
+        if (!moved.current) live.current.onDragStart?.();
+        moved.current = true;
+      },
+      onPanResponderRelease: (_e, g) => {
+        const cur = live.current;
+        if (moved.current) cur.onDragEnd(Math.max(0, cur.t + g.dx / cur.pps));
+        else cur.onTap();
+      },
+    })
+  ).current;
 
   return (
     <View style={[styles.kfHit, { left: leftPx - 11 }]} {...pan.panHandlers}>
