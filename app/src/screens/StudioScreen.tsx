@@ -235,6 +235,12 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
     // No looping: the sequence advances clip to clip, and the end of the
     // last clip is the end of the timeline.
     p.loop = false;
+    // Without this the timeUpdate event never fires at all (expo-video
+    // defaults it to 0 = disabled). The video would play natively while JS
+    // never learned time had advanced, so every layer sat frozen at whatever
+    // sourceTime a scrub last wrote — the whole reason playback showed no
+    // animation while dragging the timeline did.
+    p.timeUpdateEventInterval = 1 / 30;
   });
   const [sourceTime, setSourceTime] = useState(0);
   const [sourceDuration, setSourceDuration] = useState(0);
@@ -303,6 +309,7 @@ export default function StudioScreen({ focused }: { focused: boolean }) {
   useEffect(() => {
     if (!activeClip) return;
     try {
+      player.timeUpdateEventInterval = 1 / 30;
       // Decoders reject extreme rates; the preview caps out while the export
       // still bakes the clip's real speed.
       player.playbackRate = Math.max(0.1, Math.min(8, activeClip.speed));
@@ -1102,6 +1109,15 @@ function AnimatePanel({
           : "Animated — dragging on the canvas, or moving X/Y, writes a keyframe at the playhead."}
       </Mono>
 
+      {!onScreen && (
+        <View style={styles.warnBox}>
+          <Mono color={C.attach} size={10.5}>
+            The playhead is outside this layer's {layer.tIn.toFixed(1)}s–{layer.tOut.toFixed(1)}s window, so
+            it shows as a ghost. You can still move and scale it — or widen the window with In/Out below.
+          </Mono>
+        </View>
+      )}
+
       <Ctrl label={`X · ${Math.round(pose.x)}px`}>
         <Slider
           onBegin={onBegin}
@@ -1484,21 +1500,27 @@ function Sprite({
 
   // Out-of-window layers stay mounted (a video layer keeps its playback
   // position) but go fully transparent and stop taking touches.
+  //
+  // Except when selected. A layer you are working on must never become
+  // untouchable just because the playhead wandered outside its in/out window —
+  // that reads as the object being mysteriously locked. Selected layers show as
+  // a ghost instead, so they can always be moved, scaled and keyframed.
   const hidden = alpha <= 0.001;
+  const ghost = hidden && selected;
 
   return (
     <View
       {...pan.panHandlers}
-      pointerEvents={hidden ? "none" : "auto"}
+      pointerEvents={hidden && !selected ? "none" : "auto"}
       style={{
         position: "absolute",
         left: pose.x,
         top: pose.y,
-        opacity: hidden ? 0 : alpha,
+        opacity: ghost ? 0.3 : hidden ? 0 : alpha,
         transform: [{ rotate: `${pose.rotation}deg` }, { scale: pose.scale }],
       }}
     >
-      <View style={selected && !hidden ? styles.spriteSel : undefined}>
+      <View style={selected ? (ghost ? styles.spriteGhost : styles.spriteSel) : undefined}>
         {layer.kind === "text" ? (
           <Text style={{ color: layer.color, fontSize: layer.fontSize, fontWeight: "800", fontFamily: F.sansMed }}>
             {layer.text}
@@ -1579,6 +1601,7 @@ const styles = StyleSheet.create({
   exportChip: { backgroundColor: C.red, borderRadius: 40, paddingHorizontal: 14, paddingVertical: 7, minWidth: 62, alignItems: "center" },
   canvasWrap: { height: 240, backgroundColor: "#000", marginHorizontal: 12, borderRadius: 10, overflow: "hidden", borderWidth: 1, borderColor: C.line },
   spriteSel: { borderWidth: 1, borderColor: C.redBright, borderStyle: "dashed" },
+  spriteGhost: { borderWidth: 1, borderColor: C.inkMute, borderStyle: "dashed", borderRadius: 2 },
   transport: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 14, paddingVertical: 10 },
   playBtn: { width: 34, height: 34, borderRadius: 17, backgroundColor: C.red, alignItems: "center", justifyContent: "center" },
   stepBtn: { paddingHorizontal: 7, paddingVertical: 7, borderRadius: 6, backgroundColor: C.surface, borderWidth: 1, borderColor: C.line },
