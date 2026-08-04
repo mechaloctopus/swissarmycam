@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { View, Text, StyleSheet, PanResponder, Pressable, ScrollView } from "react-native";
+import { View, Text, StyleSheet, Pressable, ScrollView } from "react-native";
 import { C, F } from "../theme";
 import { Layer, AudioTrack, snapTime } from "../timeline";
+import { useLiveGesture, LiveGestureHandlers } from "../gestures";
 
 const RULER_H = 22;
 const LANE_H = 34;
@@ -242,13 +243,11 @@ function Lane({
   const startRef = useRef({ tIn: layer.tIn, tOut: layer.tOut });
   const wasSnapped = useRef(false);
 
-  // Same trap as the canvas sprite, and the reason dragging a clip or a
-  // keyframe did nothing: these responders were rebuilt on every render, and
-  // each drag re-renders, so a fresh PanResponder arrived mid-gesture with a
-  // fresh gestureState and g.dx snapped back to ~0. They are created once now
-  // and read everything current through this ref.
-  const live = useRef({ layer, pps, duration, onTrim, onMoveKeyframe, onTapKeyframe, onGestureStart, onSelect, snapTargets, onSnap });
-  live.current = { layer, pps, duration, onTrim, onMoveKeyframe, onTapKeyframe, onGestureStart, onSelect, snapTargets, onSnap };
+  // Live values for every gesture in this lane; useLiveGesture refreshes them
+  // each render so handlers never go stale (see src/gestures.ts).
+  const liveVals = { layer, pps, duration, onTrim, onMoveKeyframe, onTapKeyframe, onGestureStart, onSelect, snapTargets, onSnap };
+  const live = useRef(liveVals);
+  live.current = liveVals;
 
   // Snap to the playhead/cuts plus every whole second; ~8px of grab range.
   const applySnap = (t: number): number => {
@@ -261,64 +260,52 @@ function Lane({
     return r.t;
   };
 
-  const makeTrimResponder = (edge: "in" | "out") =>
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderTerminationRequest: () => false,
-      onPanResponderGrant: () => {
-        const cur = live.current;
-        cur.onGestureStart?.();
-        cur.onSelect(cur.layer.id);
-        startRef.current = { tIn: cur.layer.tIn, tOut: cur.layer.tOut };
-        wasSnapped.current = false;
-      },
-      onPanResponderMove: (_e, g) => {
-        const cur = live.current;
-        const dt = g.dx / cur.pps;
-        if (edge === "in") {
-          const next = applySnap(Math.max(0, Math.min(startRef.current.tOut - 0.1, startRef.current.tIn + dt)));
-          cur.onTrim(cur.layer.id, Math.min(next, startRef.current.tOut - 0.1), startRef.current.tOut);
-        } else {
-          const next = applySnap(Math.min(cur.duration, Math.max(startRef.current.tIn + 0.1, startRef.current.tOut + dt)));
-          cur.onTrim(cur.layer.id, startRef.current.tIn, Math.max(next, startRef.current.tIn + 0.1));
-        }
-      },
-    });
+  const trimHandlers = (edge: "in" | "out"): LiveGestureHandlers<typeof liveVals> => ({
+    onStart: (cur) => {
+      cur.onGestureStart?.();
+      cur.onSelect(cur.layer.id);
+      startRef.current = { tIn: cur.layer.tIn, tOut: cur.layer.tOut };
+      wasSnapped.current = false;
+    },
+    onMove: (cur, _e, g) => {
+      const dt = g.dx / cur.pps;
+      if (edge === "in") {
+        const next = applySnap(Math.max(0, Math.min(startRef.current.tOut - 0.1, startRef.current.tIn + dt)));
+        cur.onTrim(cur.layer.id, Math.min(next, startRef.current.tOut - 0.1), startRef.current.tOut);
+      } else {
+        const next = applySnap(Math.min(cur.duration, Math.max(startRef.current.tIn + 0.1, startRef.current.tOut + dt)));
+        cur.onTrim(cur.layer.id, startRef.current.tIn, Math.max(next, startRef.current.tIn + 0.1));
+      }
+    },
+  });
 
-  const trimIn = useRef(makeTrimResponder("in")).current;
-  const trimOut = useRef(makeTrimResponder("out")).current;
+  const trimIn = useLiveGesture(liveVals, trimHandlers("in"));
+  const trimOut = useLiveGesture(liveVals, trimHandlers("out"));
 
   const bodyStart = useRef({ tIn: layer.tIn, tOut: layer.tOut });
   const touchDown = useRef(0);
-  const body = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => {
-        touchDown.current = Date.now();
-        return false; // never claim on contact — a quick drag is a scrub
-      },
-      // Moving a clip requires holding it first. Now that scrolling the
-      // timeline *is* scrubbing, a plain horizontal drag belongs to the scroll;
-      // the hold is what says "I mean this clip, not the playhead".
-      onMoveShouldSetPanResponder: (_e, g) =>
-        Date.now() - touchDown.current > 320 && Math.abs(g.dx) > 4,
-      onPanResponderTerminationRequest: () => false,
-      onPanResponderGrant: () => {
-        const cur = live.current;
-        cur.onGestureStart?.();
-        cur.onSelect(cur.layer.id);
-        bodyStart.current = { tIn: cur.layer.tIn, tOut: cur.layer.tOut };
-      },
-      onPanResponderMove: (_e, g) => {
-        const cur = live.current;
-        const dt = g.dx / cur.pps;
-        const span = bodyStart.current.tOut - bodyStart.current.tIn;
-        let nextIn = bodyStart.current.tIn + dt;
-        nextIn = Math.max(0, Math.min(cur.duration - span, nextIn));
-        cur.onTrim(cur.layer.id, nextIn, nextIn + span);
-      },
-    })
-  ).current;
+  const body = useLiveGesture(liveVals, {
+    shouldStart: () => {
+      touchDown.current = Date.now();
+      return false; // never claim on contact — a quick drag is a scrub
+    },
+    // Moving a clip requires holding it first. Now that scrolling the timeline
+    // IS scrubbing, a plain horizontal drag belongs to the scroll; the hold is
+    // what says "I mean this clip, not the playhead".
+    shouldMove: (_cur, _e, g) => Date.now() - touchDown.current > 320 && Math.abs(g.dx) > 4,
+    onStart: (cur) => {
+      cur.onGestureStart?.();
+      cur.onSelect(cur.layer.id);
+      bodyStart.current = { tIn: cur.layer.tIn, tOut: cur.layer.tOut };
+    },
+    onMove: (cur, _e, g) => {
+      const dt = g.dx / cur.pps;
+      const span = bodyStart.current.tOut - bodyStart.current.tIn;
+      let nextIn = bodyStart.current.tIn + dt;
+      nextIn = Math.max(0, Math.min(cur.duration - span, nextIn));
+      cur.onTrim(cur.layer.id, nextIn, nextIn + span);
+    },
+  });
 
   return (
     <View style={styles.lane}>
@@ -378,33 +365,25 @@ function KeyframeDot({
   onDragEnd: (to: number) => void;
 }) {
   const moved = useRef(false);
-  // Built once for the same reason as the lane and the sprite — dragging a dot
-  // retimes a keyframe, which re-renders, which would otherwise hand the
-  // gesture a brand-new PanResponder with dx back at zero.
-  const live = useRef({ t, pps, onTap, onDragStart, onDragEnd });
-  live.current = { t, pps, onTap, onDragStart, onDragEnd };
-
-  const pan = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      // Only claim the gesture once it's clearly a horizontal drag, so a plain
-      // tap still reaches onTap and a vertical scroll still reaches the list.
-      onMoveShouldSetPanResponder: (_e, g) => Math.abs(g.dx) > 4,
-      onPanResponderTerminationRequest: () => false,
-      onPanResponderGrant: () => {
+  const pan = useLiveGesture(
+    { t, pps, onTap, onDragStart, onDragEnd },
+    {
+      // A plain tap must still reach onTap, and a vertical swipe must still
+      // scroll, so only a clear horizontal drag claims the gesture.
+      shouldMove: (_cur, _e, g) => Math.abs(g.dx) > 4,
+      onStart: () => {
         moved.current = false;
       },
-      onPanResponderMove: () => {
-        if (!moved.current) live.current.onDragStart?.();
+      onMove: (cur) => {
+        if (!moved.current) cur.onDragStart?.();
         moved.current = true;
       },
-      onPanResponderRelease: (_e, g) => {
-        const cur = live.current;
+      onEnd: (cur, _e, g) => {
         if (moved.current) cur.onDragEnd(Math.max(0, cur.t + g.dx / cur.pps));
         else cur.onTap();
       },
-    })
-  ).current;
+    }
+  );
 
   return (
     <View style={[styles.kfHit, { left: leftPx - 11 }]} {...pan.panHandlers}>

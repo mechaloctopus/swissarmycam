@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { View, Text, StyleSheet, Pressable, PanResponder, LayoutChangeEvent, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, Pressable, LayoutChangeEvent, ActivityIndicator } from "react-native";
 import { C, F } from "../theme";
+import { useLiveGesture } from "../gestures";
 import { Label, Mono } from "../components/ui";
 import { Slider, Toggle, Row, Stepper, Segmented } from "../components/controls";
 import { pickImageFromLibrary, shareFile } from "../media";
@@ -95,29 +96,30 @@ export default function TraceScreen({ focused }: { focused: boolean }) {
     viewSize.current = { width: e.nativeEvent.layout.width, height: e.nativeEvent.layout.height };
   }, []);
 
-  // Recreated each render (cheap) so its callbacks always see current state —
-  // avoids the stale-closure trap of memoizing PanResponder.create via useRef.
-  const pan = PanResponder.create({
-    onStartShouldSetPanResponder: () => true,
-    onMoveShouldSetPanResponder: () => true,
-    onPanResponderGrant: () => {
-      offsetStart.current = { x: offsetX, y: offsetY };
-    },
-    onPanResponderMove: (_e, g) => {
-      if (locked || !anchorPlaced) return;
-      setOffsetX(offsetStart.current.x + g.dx * PAN_METERS_PER_PX);
-      setOffsetY(offsetStart.current.y - g.dy * PAN_METERS_PER_PX);
-    },
-    onPanResponderRelease: (e, g) => {
-      if (locked || anchorPlaced) return;
-      if (Math.abs(g.dx) >= 6 || Math.abs(g.dy) >= 6) return;
-      const { width, height } = viewSize.current;
-      if (width <= 0 || height <= 0) return;
-      setArError(null);
-      setPlaceAt({ x: e.nativeEvent.locationX / width, y: e.nativeEvent.locationY / height });
-      setPlaceTrigger((t) => t + 1);
-    },
-  }).panHandlers;
+  // Nudging the overlay re-renders on every move, so this must not be rebuilt
+  // mid-gesture (see src/gestures.ts).
+  const pan = useLiveGesture(
+    { locked, anchorPlaced, offsetX, offsetY },
+    {
+      onStart: (live) => {
+        offsetStart.current = { x: live.offsetX, y: live.offsetY };
+      },
+      onMove: (live, _e, g) => {
+        if (live.locked || !live.anchorPlaced) return;
+        setOffsetX(offsetStart.current.x + g.dx * PAN_METERS_PER_PX);
+        setOffsetY(offsetStart.current.y - g.dy * PAN_METERS_PER_PX);
+      },
+      onEnd: (live, e, g) => {
+        if (live.locked || live.anchorPlaced) return;
+        if (Math.abs(g.dx) >= 6 || Math.abs(g.dy) >= 6) return;
+        const { width, height } = viewSize.current;
+        if (width <= 0 || height <= 0) return;
+        setArError(null);
+        setPlaceAt({ x: e.nativeEvent.locationX / width, y: e.nativeEvent.locationY / height });
+        setPlaceTrigger((t) => t + 1);
+      },
+    }
+  ).panHandlers;
 
   const doReset = () => {
     setAnchorPlaced(false);

@@ -1,6 +1,7 @@
 import React, { useRef, useState } from "react";
-import { View, Text, Pressable, Switch, StyleSheet, PanResponder, LayoutChangeEvent, StyleProp, ViewStyle } from "react-native";
+import { View, Text, Pressable, Switch, StyleSheet, LayoutChangeEvent, StyleProp, ViewStyle } from "react-native";
 import { C, F } from "../theme";
+import { useLiveGesture } from "../gestures";
 
 /** A labelled settings row: title + optional hint on the left, control on the right. */
 export function Row({ title, hint, children, column }: { title: string; hint?: string; children?: React.ReactNode; column?: boolean }) {
@@ -122,40 +123,31 @@ export function Slider({
     });
   };
 
-  // The responder is built once (so a drag keeps its gestureState) but must
-  // therefore read its props through a ref. Closing over them directly pinned
-  // onChange to the FIRST render — in the editor's Animate panel that meant
-  // every slider kept writing to whichever layer and playhead time existed at
-  // mount, so adjusting anything later appeared to do nothing at all.
-  const live = useRef({ min, max, step, onChange, onBegin });
-  live.current = { min, max, step, onChange, onBegin };
-
-  const emit = (pageX: number) => {
+  const emit = (
+    live: { min: number; max: number; step: number; onChange: (v: number) => void },
+    pageX: number
+  ) => {
     const { x, w } = geo.current;
-    if (w <= 0) return;
-    const { min: lo, max: hi, step: st, onChange: emitChange } = live.current;
-    if (!Number.isFinite(pageX) || hi <= lo) return;
+    if (w <= 0 || !Number.isFinite(pageX) || live.max <= live.min) return;
     let r = (pageX - x) / w;
     r = Math.max(0, Math.min(1, r));
-    let v = lo + r * (hi - lo);
-    v = Math.round(v / st) * st;
-    emitChange(Math.max(lo, Math.min(hi, v)));
+    let v = live.min + r * (live.max - live.min);
+    v = Math.round(v / live.step) * live.step;
+    live.onChange(Math.max(live.min, Math.min(live.max, v)));
   };
 
-  const pan = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderTerminationRequest: () => false,
-      onPanResponderGrant: (_e, g) => {
-        live.current.onBegin?.();
+  const pan = useLiveGesture(
+    { min, max, step, onChange, onBegin },
+    {
+      onStart: (live, _e, g) => {
+        live.onBegin?.();
         measure();
-        // measureInWindow is async; use a microtask so geo is fresh on first touch.
-        requestAnimationFrame(() => emit(g.x0));
+        // measureInWindow is async; wait a frame so geo is fresh on first touch.
+        requestAnimationFrame(() => emit(live, g.x0));
       },
-      onPanResponderMove: (_e, g) => emit(g.moveX),
-    })
-  ).current;
+      onMove: (live, _e, g) => emit(live, g.moveX),
+    }
+  );
 
   const onLayout = (_e: LayoutChangeEvent) => measure();
   const pct = max > min ? ((value - min) / (max - min)) * 100 : 0;

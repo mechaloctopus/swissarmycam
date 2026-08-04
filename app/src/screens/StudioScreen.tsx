@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   Pressable,
-  PanResponder,
   ScrollView,
   Modal,
   TextInput,
@@ -17,6 +16,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { useEventListener } from "expo";
 import { C, F } from "../theme";
+import { useLiveGesture } from "../gestures";
 import { Label, Mono } from "../components/ui";
 import { Slider, Segmented } from "../components/controls";
 import { Timeline } from "../components/Timeline";
@@ -1453,50 +1453,34 @@ function Sprite({
   const alpha = alphaAt(layer, t);
   const start = useRef({ x: 0, y: 0, scale: 1, dist: 0 });
 
-  // The responder is created ONCE and reads everything it needs through a ref.
-  //
-  // It used to be rebuilt every render to avoid a stale pose, but dragging
-  // re-renders on every move, and a fresh PanResponder carries a fresh
-  // gestureState — so g.dx reset to ~0 on each event and the sprite never
-  // actually moved. Building it once keeps gestureState continuous; the ref
-  // keeps the values current. Both problems, one pattern.
-  const latest = useRef({ pose, layer, onSelect, onDragStart, onDragEnd, onDrag, onPinch });
-  latest.current = { pose, layer, onSelect, onDragStart, onDragEnd, onDrag, onPinch };
-
-  const pan = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      // Don't let the parent ScrollView steal a drag that started on a sprite.
-      onPanResponderTerminationRequest: () => false,
-      onPanResponderGrant: (e) => {
-        const cur = latest.current;
-        cur.onSelect(cur.layer.id);
-        cur.onDragStart?.();
+  const pan = useLiveGesture(
+    { pose, layer, onSelect, onDragStart, onDragEnd, onDrag, onPinch },
+    {
+      onStart: (live, e) => {
+        live.onSelect(live.layer.id);
+        live.onDragStart?.();
         const touches = e.nativeEvent.touches;
         start.current = {
-          x: cur.pose.x,
-          y: cur.pose.y,
-          scale: cur.pose.scale,
+          x: live.pose.x,
+          y: live.pose.y,
+          scale: live.pose.scale,
           dist: touches.length >= 2 ? touchDistance(touches) : 0,
         };
       },
-      onPanResponderMove: (e, g) => {
-        const cur = latest.current;
+      onMove: (live, e, g) => {
         const touches = e.nativeEvent.touches;
         if (touches.length >= 2) {
           const d = touchDistance(touches);
           if (start.current.dist > 0) {
-            cur.onPinch(Math.max(0.1, Math.min(6, start.current.scale * (d / start.current.dist))));
+            live.onPinch(Math.max(0.1, Math.min(6, start.current.scale * (d / start.current.dist))));
           }
           return;
         }
-        cur.onDrag(start.current.x + g.dx, start.current.y + g.dy);
+        live.onDrag(start.current.x + g.dx, start.current.y + g.dy);
       },
-      onPanResponderRelease: () => latest.current.onDragEnd?.(),
-      onPanResponderTerminate: () => latest.current.onDragEnd?.(),
-    })
-  ).current;
+      onEnd: (live) => live.onDragEnd?.(),
+    }
+  );
 
   // Out-of-window layers stay mounted (a video layer keeps its playback
   // position) but go fully transparent and stop taking touches.
