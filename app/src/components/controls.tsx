@@ -122,14 +122,24 @@ export function Slider({
     });
   };
 
+  // The responder is built once (so a drag keeps its gestureState) but must
+  // therefore read its props through a ref. Closing over them directly pinned
+  // onChange to the FIRST render — in the editor's Animate panel that meant
+  // every slider kept writing to whichever layer and playhead time existed at
+  // mount, so adjusting anything later appeared to do nothing at all.
+  const live = useRef({ min, max, step, onChange, onBegin });
+  live.current = { min, max, step, onChange, onBegin };
+
   const emit = (pageX: number) => {
     const { x, w } = geo.current;
     if (w <= 0) return;
+    const { min: lo, max: hi, step: st, onChange: emitChange } = live.current;
+    if (!Number.isFinite(pageX) || hi <= lo) return;
     let r = (pageX - x) / w;
     r = Math.max(0, Math.min(1, r));
-    let v = min + r * (max - min);
-    v = Math.round(v / step) * step;
-    onChange(Math.max(min, Math.min(max, v)));
+    let v = lo + r * (hi - lo);
+    v = Math.round(v / st) * st;
+    emitChange(Math.max(lo, Math.min(hi, v)));
   };
 
   const pan = useRef(
@@ -138,7 +148,7 @@ export function Slider({
       onMoveShouldSetPanResponder: () => true,
       onPanResponderTerminationRequest: () => false,
       onPanResponderGrant: (_e, g) => {
-        onBegin?.();
+        live.current.onBegin?.();
         measure();
         // measureInWindow is async; use a microtask so geo is fresh on first touch.
         requestAnimationFrame(() => emit(g.x0));

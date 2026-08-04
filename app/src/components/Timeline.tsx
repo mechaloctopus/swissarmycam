@@ -83,11 +83,13 @@ export function Timeline({
   const [viewW, setViewW] = useState(0);
   const userScrolling = useRef(false);
   const settle = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastX = useRef(0);
 
   const live = useRef({ pps, safeDuration, onSeek });
   live.current = { pps, safeDuration, onSeek };
 
   const handleScroll = (x: number) => {
+    lastX.current = x;
     // Only user-driven scrolls seek. Programmatic ones come *from* currentTime,
     // and seeking on those would feed straight back into itself.
     if (!userScrolling.current) return;
@@ -98,10 +100,17 @@ export function Timeline({
     seek(Math.max(0, Math.min(d, t)));
   };
 
-  // Follow the playhead when something else moves it (playback, frame-step).
+  // Follow the playhead when something else moves it (playback, frame-step,
+  // tapping a keyframe).
   useEffect(() => {
-    if (userScrolling.current || viewW <= 0) return;
+    if (viewW <= 0) return;
     const x = Math.max(0, currentTime * pps);
+    // A user scroll moves continuously; an external seek jumps. Treating a big
+    // jump as authoritative means a stuck scroll flag can never swallow a seek
+    // — which would look exactly like tapping a keyframe doing nothing.
+    const jumped = Math.abs(x - lastX.current) > 24;
+    if (userScrolling.current && !jumped) return;
+    lastX.current = x;
     scrollRef.current?.scrollTo({ x, animated: false });
   }, [currentTime, pps, viewW]);
 
@@ -150,6 +159,7 @@ export function Timeline({
               <Lane
                 key={layer.id}
                 layer={layer}
+                currentTime={currentTime}
                 pps={pps}
                 duration={safeDuration}
                 selected={layer.id === selectedId}
@@ -201,6 +211,7 @@ export function Timeline({
 
 function Lane({
   layer,
+  currentTime,
   pps,
   duration,
   selected,
@@ -213,6 +224,7 @@ function Lane({
   onSnap,
 }: {
   layer: Layer;
+  currentTime: number;
   pps: number;
   duration: number;
   selected: boolean;
@@ -327,7 +339,11 @@ function Lane({
             t={k.t}
             leftPx={(k.t - layer.tIn) * pps}
             pps={pps}
-            onTap={() => onTapKeyframe(k.t)}
+            active={Math.abs(k.t - currentTime) < 0.05}
+            onTap={() => {
+              live.current.onSelect(live.current.layer.id);
+              live.current.onTapKeyframe(k.t);
+            }}
             onDragStart={onGestureStart}
             onDragEnd={(to) => onMoveKeyframe(layer.id, k.t, applySnap(to))}
           />
@@ -348,6 +364,7 @@ function KeyframeDot({
   t,
   leftPx,
   pps,
+  active,
   onTap,
   onDragStart,
   onDragEnd,
@@ -355,6 +372,7 @@ function KeyframeDot({
   t: number;
   leftPx: number;
   pps: number;
+  active?: boolean;
   onTap: () => void;
   onDragStart?: () => void;
   onDragEnd: (to: number) => void;
@@ -390,7 +408,7 @@ function KeyframeDot({
 
   return (
     <View style={[styles.kfHit, { left: leftPx - 11 }]} {...pan.panHandlers}>
-      <View style={styles.kfDot} />
+      <View style={[styles.kfDot, active && styles.kfDotOn]} />
     </View>
   );
 }
@@ -468,5 +486,7 @@ const styles = StyleSheet.create({
     borderColor: "#fff",
     transform: [{ rotate: "45deg" }],
   },
+  // The keyframe the playhead is sitting on — the one your edits will land in.
+  kfDotOn: { backgroundColor: "#fff", borderColor: C.redBright, borderWidth: 2, transform: [{ rotate: "45deg" }, { scale: 1.4 }] },
   playhead: { position: "absolute", top: 0, width: 2, backgroundColor: C.redBright },
 });
